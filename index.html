@@ -126,6 +126,9 @@ h2{font-size:18px; margin:0 0 14px}
 .searchrow textarea{flex:1; padding:12px 14px; border:1px solid var(--border); border-radius:12px; background:#fff; font:inherit; font-size:16px; line-height:1.4; resize:none; max-height:200px; overflow-y:auto}
 .searchrow textarea:focus{outline:2px solid var(--brand); outline-offset:-1px; border-color:transparent}
 .searchrow .btn{padding:12px 18px}
+.sbtns{display:flex; flex-direction:column; gap:6px}
+.btn.report{background:#3fa9f5; border-color:#3fa9f5; color:#fff; padding:7px 12px; font-size:13px; white-space:nowrap}
+.btn.report:hover{background:#2196e6; border-color:#2196e6}
 .missing{margin:-4px 0 12px; font-size:13px; color:var(--red); word-break:break-all}
 .bulkbar{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; font-size:13px}
 .bulkbar .rowbtns{gap:8px}
@@ -291,7 +294,10 @@ tbody tr:hover{background:#fcfcfc}
       여러 개를 한꺼번에 찾으려면 엑셀에서 복사해 붙여넣거나 쉼표로 구분하세요.</p>
     <div class="searchrow">
       <textarea id="q" rows="1" placeholder="예: 8801234567890  (여러 개: 줄바꿈 · 쉼표로 구분)" autocomplete="off" spellcheck="false"></textarea>
-      <button class="btn primary" id="btnSearch">검색</button>
+      <div class="sbtns">
+        <button class="btn report" id="btnReport" title="검색한 코드마다 1~9번 서류가 있는지 엑셀로 받기">검색 결과 보고서</button>
+        <button class="btn primary" id="btnSearch">검색</button>
+      </div>
     </div>
     <div class="filters">
       <div class="head">
@@ -1056,13 +1062,14 @@ let scanList = [];       // 마지막 검색 때 읽은 모든 파일 (필터를
 let lastCodes = [];
 let found = [];
 let matchedCount = 0;
+let matchedAll = [];      // 서류 유형 필터 전 결과 (보고서용)
 const selected = new Set();   // 체크한 파일 (rel)
 async function search(){
   const codes = splitCodes($('#q').value);
   if (!codes.length){ toast('제품코드를 입력해주세요'); return; }
   if (!(await ensureRoot())) return;
   const my = ++searchToken;
-  scanList = []; lastCodes = codes; found = []; selected.clear();
+  scanList = []; lastCodes = []; found = []; matchedAll = []; selected.clear();
   $('#results').innerHTML = '';
   $('#meta').textContent = '검색 중…';
   for await (const item of walk(root)){
@@ -1072,6 +1079,7 @@ async function search(){
     if (scanList.length % 200 === 0) $('#meta').textContent = `검색 중… ${scanList.length}개 확인`;
   }
   if (my !== searchToken) return;
+  lastCodes = codes;
   await applyFilter();
 }
 /* 검색어 · 정확히 일치 · 서류 유형 필터 적용 (다시 읽지 않음) */
@@ -1096,7 +1104,7 @@ async function applyFilter(){
   if (my !== searchToken) return;
   const order = c => lastCodes.indexOf(c);
   list.sort((a,b) => order(a.hits[0]) - order(b.hits[0]) || (a.type?.id ?? 99) - (b.type?.id ?? 99) || a.name.localeCompare(b.name));
-  found = list; matchedCount = matched.length;
+  found = list; matchedCount = matched.length; matchedAll = matched;
   [...selected].forEach(k => { if (!found.some(r => r.rel === k)) selected.delete(k); });
   const label = lastCodes.length === 1 ? `"${lastCodes[0]}"` : `코드 ${lastCodes.length}개`;
   const hidden = matched.length - found.length;
@@ -1184,6 +1192,99 @@ async function openFile(r){
   }
 }
 
+/* ---------- 검색 결과 보고서 (엑셀) ----------
+   행 = 검색한 코드, 열 = 1~9번 서류. 파일 수를 적고, 없는 칸은 빨간색 '없음'.
+   서류 유형 필터와 상관없이 1~9번 모두 보여 줌 ('코드 정확히 일치'는 따름). 두 번째 시트 = 파일 목록.
+   외부 라이브러리 없이 xlsx(ZIP + XML)를 직접 만든다 (위 makeZip 사용) */
+async function downloadReport(){
+  if (!lastCodes.length){ toast('먼저 검색해 주세요'); return; }
+  for (const it of matchedAll){
+    if (it.file === undefined){ try { it.file = await it.handle.getFile(); } catch { it.file = null; } }
+  }
+  const head = ['코드', ...TYPES.map(t => `${t.id}. ${t.name}`), '없는 서류 수'];
+  const rows = lastCodes.map(code => {
+    const counts = TYPES.map(t => matchedAll.filter(r => r.type === t && r.hits.includes(code)).length);
+    return [{v:code, s:5}, ...counts.map(n => n ? {v:n, s:2} : {v:'없음', s:3}),
+            {v:counts.filter(n => !n).length, s:counts.some(n => !n) ? 6 : 2}];
+  });
+  const list = [];
+  for (const code of lastCodes) for (const r of matchedAll) if (r.hits.includes(code)) list.push([
+    {v:code, s:4}, {v:r.type ? `${r.type.id}. ${r.type.name}` : '기타', s:4}, {v:r.name, s:4}, {v:r.path, s:4},
+    {v:r.file ? fmtDate(r.file.lastModified) : '', s:4},
+    {v:r.type && r.type !== r.folderType ? (r.rel.includes('\\') ? r.rel.split('\\')[0] : '최상위') + ' 폴더에 있음' : '', s:4},
+  ]);
+  const xlsx = makeXlsx([
+    {name:'검색 결과', head, rows, widths:[18, ...TYPES.map(() => 15), 12], freeze:true},
+    {name:'파일 목록', head:['코드','유형','파일명','경로','수정일','폴더 확인'], rows:list, widths:[18,24,48,70,12,22], freeze:true, filter:true},
+  ]);
+  const url = URL.createObjectURL(xlsx);
+  const a = document.createElement('a');
+  a.href = url; a.download = `검색결과보고서_${fmtDate(Date.now()).replaceAll('-', '')}_코드${lastCodes.length}개.xlsx`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+  toast('검색 결과 보고서를 받았어요');
+}
+const colName = n => { let s = ''; for (n++; n; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s; return s; };
+const xmlText = v => esc(String(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ''));
+function sheetXml(sh){
+  const cell = (c, r, ci) => typeof c.v === 'number'
+    ? `<c r="${colName(ci)}${r}" s="${c.s}"><v>${c.v}</v></c>`
+    : `<c r="${colName(ci)}${r}" s="${c.s}" t="inlineStr"><is><t xml:space="preserve">${xmlText(c.v)}</t></is></c>`;
+  const all = [sh.head.map(v => ({v, s:1})), ...sh.rows];
+  const last = colName(sh.head.length - 1) + all.length;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetViews><sheetView workbookViewId="0"${sh.freeze ? '><pane xSplit="1" ySplit="1" topLeftCell="B2" activePane="bottomRight" state="frozen"/></sheetView>' : '/>'}</sheetViews>
+<cols>${sh.widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>
+<sheetData>${all.map((row, ri) => `<row r="${ri + 1}"${ri ? '' : ' ht="32" customHeight="1"'}>${row.map((c, ci) => cell(c, ri + 1, ci)).join('')}</row>`).join('')}</sheetData>
+${sh.filter ? `<autoFilter ref="A1:${last}"/>` : ''}</worksheet>`;
+}
+function makeXlsx(sheets){
+  const ns = 'http://schemas.openxmlformats.org';
+  const border = '<border><left style="thin"><color rgb="FFD0D0D0"/></left><right style="thin"><color rgb="FFD0D0D0"/></right><top style="thin"><color rgb="FFD0D0D0"/></top><bottom style="thin"><color rgb="FFD0D0D0"/></bottom><diagonal/></border>';
+  // 스타일 번호: 1 머리글 · 2 숫자(가운데) · 3 없음(빨강) · 4 글자 · 5 코드(굵게) · 6 빠진 수(빨간 글자)
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="${ns}/spreadsheetml/2006/main">
+<fonts count="4"><font><sz val="10"/><name val="맑은 고딕"/></font><font><b/><sz val="10"/><name val="맑은 고딕"/></font>
+<font><b/><sz val="10"/><color rgb="FF9C0006"/><name val="맑은 고딕"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="맑은 고딕"/></font></fonts>
+<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF1F5FD6"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFFFC7CE"/><bgColor indexed="64"/></patternFill></fill></fills>
+<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>${border}</borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="7">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+<xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="49" fontId="1" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+<xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+  const files = {
+    '[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="${ns}/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+${sheets.map((s, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`,
+    '_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="${ns}/package/2006/relationships"><Relationship Id="rId1" Type="${ns}/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="${ns}/spreadsheetml/2006/main" xmlns:r="${ns}/officeDocument/2006/relationships"><sheets>
+${sheets.map((s, i) => `<sheet name="${xmlText(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>
+<definedNames>${sheets.map((s, i) => s.filter ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xmlText(s.name)}'!$A$1:$${colName(s.head.length - 1)}$${s.rows.length + 1}</definedName>` : '').join('')}</definedNames></workbook>`,
+    'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="${ns}/package/2006/relationships">
+${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="${ns}/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}
+<Relationship Id="rId${sheets.length + 1}" Type="${ns}/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+    'xl/styles.xml': styles,
+  };
+  sheets.forEach((s, i) => files[`xl/worksheets/sheet${i + 1}.xml`] = sheetXml(s));
+  const enc = new TextEncoder(), now = Date.now();
+  return new Blob([makeZip(Object.entries(files).map(([name, x]) => ({name, data:enc.encode(x), time:now})))],
+    {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+
 /* ---------- 일괄 다운로드 ---------- */
 const selectedRows = () => found.filter(r => selected.has(r.rel));
 async function busy(btn, text, fn){
@@ -1266,7 +1367,7 @@ function makeZip(entries){
   return new Blob([...parts, ...central, end], {type:'application/zip'});
 }
 function clearSearch(){
-  searchToken++; found = []; scanList = []; lastCodes = []; selected.clear();
+  searchToken++; found = []; scanList = []; lastCodes = []; matchedAll = []; selected.clear();
   $('#q').value = ''; fitQ(); $('#results').innerHTML = ''; $('#meta').textContent = '';
 }
 const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? (n/1024).toFixed(0) + ' KB' : (n/1048576).toFixed(1) + ' MB';
@@ -1286,6 +1387,7 @@ $('#btnReset').onclick = resetForm;
 $('#btnCopyDone').onclick = () => copyText(lastSavedPath);
 $('#btnSameType').onclick = () => openForm(curType.id);
 $('#btnSearch').onclick = search;
+$('#btnReport').onclick = downloadReport;
 $('#q').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); search(); } };
 $('#q').oninput = fitQ;
 $('#exact').onchange = applyFilter;
