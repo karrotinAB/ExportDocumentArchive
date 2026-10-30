@@ -195,12 +195,9 @@ tbody tr:hover{background:#fcfcfc}
 .cand.on{background:var(--brand-soft); border-color:var(--brand); font-weight:700}
 .cand.amb{border-style:dashed}
 /* ---------- 추가 제품코드 ---------- */
-.extras{display:flex; flex-direction:column; gap:6px; margin-top:6px}
-.extras .xrow{display:flex; gap:6px; align-items:center}
-.extras .xrow input{flex:1}
-.extras .xdel{border:none; background:none; color:var(--muted); cursor:pointer; font-size:16px; padding:0 4px}
-.extras .xdel:hover{color:var(--red)}
-.addextra{margin-top:7px}
+.field .xlabel{margin-top:12px}
+.field textarea{width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:#fff; font:inherit; line-height:1.4; resize:none; min-height:64px; max-height:180px; overflow-y:auto}
+.field textarea:focus{outline:2px solid var(--brand); outline-offset:-1px; border-color:transparent}
 .incl{display:block; font-size:11.5px; color:var(--muted); margin-top:3px; word-break:break-all}
 .incl b{color:var(--brand-dk)}
 /* ---------- 보고서 팝업 ---------- */
@@ -653,12 +650,12 @@ function openForm(id){
     else if (p.kind === 'select') input = `<select id="${id}"><option value="">선택하세요</option>${p.options.map(o=>`<option>${esc(o)}</option>`).join('')}</select>`;
     else if (p.kind === 'date')   input = `<input id="${id}" type="date">`;
     else                          input = `<input id="${id}" value="${esc(p.value||'')}" placeholder="${esc(p.ph||'')}" autocomplete="off">`;
-    const extra = p.key === 'product' ? `<div class="extras" id="extras"></div>
-      <button type="button" class="textbtn addextra" id="addExtra">+ 제품코드 추가 <span class="muted" style="font-weight:500">(파일명에는 안 들어가고 검색에 쓰여요)</span></button>` : '';
+    const extra = p.key === 'product' ? `<label class="xlabel" for="extraCodes">추가 제품코드 <em>(선택 · 파일명에는 안 들어가고 검색에 쓰여요)</em></label>
+      <textarea id="extraCodes" rows="2" placeholder="여러 개는 줄바꿈 · 쉼표로 구분 (엑셀에서 붙여넣기 가능)" autocomplete="off" spellcheck="false"></textarea>` : '';
     return `<div class="field"><label for="${id}">${esc(p.label)}${opt}<span class="autobadge" id="badge_${i}" hidden>자동 입력 · 확인 필요</span></label>${input}
       <div class="cands" id="cand_${i}" hidden></div>${extra}</div>`;
   }).join('');
-  if ($('#addExtra')) $('#addExtra').onclick = () => addExtraRow('', true);
+  if ($('#extraCodes')) $('#extraCodes').oninput = () => { fitExtra(); updatePreview(); };
   $('#formFields').querySelectorAll('input,select').forEach(el => {
     const i = +el.id.split('_')[1];
     el.oninput = el.onchange = () => { userEdited(i); updatePreview(); };   // 코드로 넣은 값은 이벤트가 안 생김
@@ -722,7 +719,7 @@ function resetForm(){
   $('#fileInput').value = '';
   $('#drop').classList.remove('has');
   $('#dropText').textContent = 'PDF 파일을 여기에 끌어다 놓거나 클릭해서 선택하세요';
-  if ($('#extras')) $('#extras').innerHTML = '';
+  if ($('#extraCodes')){ $('#extraCodes').value = ''; fitExtra(); }
   if (curType) $('#formFields').querySelectorAll('[id^="fld_"]:not([readonly])').forEach(el => {
     const p = curType.parts[+el.id.split('_')[1]];
     el.value = (p.kind === 'text' && p.value) ? p.value : '';
@@ -763,30 +760,16 @@ async function save(){
 /* ---------- 추가 제품코드 ----------
    대표 제품코드만 파일명에 들어가고, 나머지 코드는 공용폴더의 CONFIG.EXTRA_DIR 아래에
    PDF마다 '{PDF 이름}.txt'(한 줄에 코드 하나)로 저장한다. 검색할 때 같이 읽는다. */
-function addExtraRow(value, focus){
-  const row = document.createElement('div'); row.className = 'xrow';
-  row.innerHTML = `<input class="extra" placeholder="추가 제품코드" autocomplete="off"><button type="button" class="xdel" title="빼기">✕</button>`;
-  const inp = row.querySelector('input'); inp.value = value;
-  inp.oninput = updatePreview;
-  inp.onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); addExtraRow('', true); } };
-  inp.onpaste = e => {   // 엑셀에서 여러 줄을 붙여넣으면 줄마다 칸을 만든다
-    const codes = splitCodes(e.clipboardData.getData('text'));
-    if (codes.length < 2) return;
-    e.preventDefault(); inp.value = codes[0]; codes.slice(1).forEach(c => addExtraRow(c)); updatePreview();
-  };
-  row.querySelector('.xdel').onclick = () => { row.remove(); updatePreview(); };
-  $('#extras').appendChild(row);
-  if (focus) inp.focus();
-}
+function fitExtra(){ const t = $('#extraCodes'); if (!t) return; t.style.height = 'auto'; if (t.offsetParent && t.scrollHeight) t.style.height = (t.scrollHeight + 2) + 'px'; }
 function extraCodes(){
-  if (!$('#extras')) return [];
+  const t = $('#extraCodes'); if (!t) return [];
   const pi = curType ? curType.parts.findIndex(p => p.key === 'product') : -1;
   const main = pi >= 0 ? valueOf(curType.parts[pi], pi).toLowerCase() : '';
   const out = [];
-  $('#extras').querySelectorAll('input.extra').forEach(el => {
-    const v = clean(el.value);
+  for (const c of splitCodes(t.value)){
+    const v = clean(c);
     if (v && v.toLowerCase() !== main && !out.some(o => o.toLowerCase() === v.toLowerCase())) out.push(v);
-  });
+  }
   return out;
 }
 async function saveExtraCodes(folder, pdfName, codes){
