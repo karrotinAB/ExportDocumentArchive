@@ -119,8 +119,18 @@ h2{font-size:18px; margin:0 0 14px}
 
 /* ---------- search ---------- */
 .searchrow{display:flex; gap:10px}
-.searchrow input{flex:1; padding:12px 14px; border:1px solid var(--border); border-radius:12px; background:#fff; font-size:16px}
-.searchrow input:focus{outline:2px solid var(--brand); outline-offset:-1px; border-color:transparent}
+.searchrow{align-items:flex-start}
+.searchrow textarea{flex:1; padding:12px 14px; border:1px solid var(--border); border-radius:12px; background:#fff; font:inherit; font-size:16px; line-height:1.4; resize:none; max-height:200px; overflow-y:auto}
+.searchrow textarea:focus{outline:2px solid var(--brand); outline-offset:-1px; border-color:transparent}
+.searchrow .btn{padding:12px 18px}
+.missing{margin:-4px 0 12px; font-size:13px; color:var(--red); word-break:break-all}
+.bulkbar{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; font-size:13px}
+.bulkbar .rowbtns{gap:8px}
+td.ck,th.ck{width:36px; padding-right:0}
+td.ck input,th.ck input{width:16px; height:16px; accent-color:var(--brand); cursor:pointer; vertical-align:middle}
+.hits{display:flex; flex-wrap:wrap; gap:4px}
+.hits span{font-family:ui-monospace,Consolas,monospace; font-size:12px; background:var(--tile); border-radius:6px; padding:1px 6px}
+.misfiled{display:block; font-size:11.5px; color:#9a5b0b; margin-top:3px}
 .filters{margin-top:18px}
 .filters .head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:10px; flex-wrap:wrap}
 .filters .head span{font-size:13px; font-weight:700}
@@ -255,9 +265,10 @@ tbody tr:hover{background:#fcfcfc}
   <!-- 찾기 -->
   <section id="viewSearch" hidden>
     <h1>파일 찾기</h1>
-    <p class="sub">제품코드를 입력하세요. 업체코드나 인보이스 넘버로도 찾을 수 있어요.</p>
+    <p class="sub">제품코드를 입력하세요. 업체코드나 인보이스 넘버로도 찾을 수 있어요.<br>
+      여러 개를 한꺼번에 찾으려면 엑셀에서 복사해 붙여넣거나 쉼표로 구분하세요.</p>
     <div class="searchrow">
-      <input id="q" placeholder="예: 8801234567890" autocomplete="off">
+      <textarea id="q" rows="1" placeholder="예: 8801234567890  (여러 개: 줄바꿈 · 쉼표로 구분)" autocomplete="off" spellcheck="false"></textarea>
       <button class="btn primary" id="btnSearch">검색</button>
     </div>
     <div class="filters">
@@ -544,7 +555,7 @@ async function save(){
 function renderChips(){
   $('#chips').innerHTML = TYPES.map(t => `
     <label class="chip"><input type="checkbox" value="${t.id}" checked><span>${t.id}. ${esc(t.name)}</span></label>`).join('');
-  $('#chips').querySelectorAll('input').forEach(c => c.onchange = syncToggleAll);
+  $('#chips').querySelectorAll('input').forEach(c => c.onchange = () => { syncToggleAll(); applyFilter(); });
 }
 function syncToggleAll(){
   const all = [...$('#chips').querySelectorAll('input')].every(c => c.checked);
@@ -557,47 +568,107 @@ async function* walk(dir, prefix=''){
     else yield* walk(h, rel);
   }
 }
+/* 서류 유형은 폴더가 아니라 파일명 안의 서류유형 글자로 정한다
+   (예: 09_ISO 폴더에 잘못 넣은 ..._HACCP_... 파일도 5번으로 잡힘) */
+const DOC_TYPE = {CO:1, TR:2, CPC:3, COA:4, MSDS:5, SDS:5, HACCP:5, KC:6, GMP:7, CGMP:8};
+function typeOfFile(name, folderType){
+  const ids = [];
+  name.replace(/\.[^.]+$/, '').split('_').forEach(s => {
+    const t = s.trim().toUpperCase();
+    let id = DOC_TYPE[t] || (/^ISO/.test(t) ? 9 : 0);
+    if (t === 'GMP' && folderType && folderType.id === 5) id = 5;   // GMP는 5번·7번 둘 다 있어서 폴더로 구분
+    if (id && !ids.includes(id)) ids.push(id);
+  });
+  const id = folderType && ids.includes(folderType.id) ? folderType.id : ids[0];
+  return TYPES.find(t => t.id === id) || folderType || null;
+}
+const splitCodes = s => [...new Set(s.split(/[\s,;]+/).map(v => v.trim()).filter(Boolean))];
+function fitQ(){ const q = $('#q'); q.style.height = 'auto'; q.style.height = (q.scrollHeight + 2) + 'px'; }
+
 let searchToken = 0;
+let scanList = [];       // 마지막 검색 때 읽은 모든 파일 (필터를 바꾸면 이걸로 다시 거름)
+let lastCodes = [];
 let found = [];
+let matchedCount = 0;
+const selected = new Set();   // 체크한 파일 (rel)
 async function search(){
-  const raw = $('#q').value.trim(), q = raw.toLowerCase();
-  const ids = [...$('#chips').querySelectorAll('input:checked')].map(c => +c.value);
-  if (!ids.length){ toast('서류 유형을 하나 이상 선택해주세요'); return; }
-  if (!q){ toast('제품코드를 입력해주세요'); return; }
+  const codes = splitCodes($('#q').value);
+  if (!codes.length){ toast('제품코드를 입력해주세요'); return; }
   if (!(await ensureRoot())) return;
-  const exact = $('#exact').checked;
   const my = ++searchToken;
-  found = []; let scanned = 0;
+  scanList = []; lastCodes = codes; found = []; selected.clear();
   $('#results').innerHTML = '';
   $('#meta').textContent = '검색 중…';
-  for (const t of TYPES.filter(t => ids.includes(t.id))){
-    let dir;
-    try { dir = await root.getDirectoryHandle(t.folder); } catch { continue; }
-    for await (const item of walk(dir)){
-      if (my !== searchToken) return;
-      scanned++;
-      if (scanned % 200 === 0) $('#meta').textContent = `검색 중… ${scanned}개 확인`;
-      const lower = item.name.toLowerCase();
-      const tokens = lower.replace(/\.[^.]+$/, '').split('_');
-      if (exact ? tokens.includes(q) : lower.includes(q)){
-        let file = null; try { file = await item.handle.getFile(); } catch {}
-        found.push({...item, type:t, file, path: joinPath(CONFIG.BASE_UNC, t.folder, item.rel)});
-      }
-    }
+  for await (const item of walk(root)){
+    if (my !== searchToken) return;
+    const folderType = item.rel.includes('\\') ? TYPES.find(t => t.folder === item.rel.split('\\')[0]) || null : null;
+    scanList.push({...item, folderType, type: typeOfFile(item.name, folderType), path: joinPath(CONFIG.BASE_UNC, item.rel)});
+    if (scanList.length % 200 === 0) $('#meta').textContent = `검색 중… ${scanList.length}개 확인`;
   }
   if (my !== searchToken) return;
-  found.sort((a,b) => a.type.id - b.type.id || a.name.localeCompare(b.name));
-  $('#meta').textContent = `"${raw}" 검색 결과 ${found.length}건 · 파일 ${scanned}개 확인`;
+  await applyFilter();
+}
+/* 검색어 · 정확히 일치 · 서류 유형 필터 적용 (다시 읽지 않음) */
+async function applyFilter(){
+  if (!lastCodes.length) return;
+  const my = searchToken;
+  const exact = $('#exact').checked;
+  const ids = [...$('#chips').querySelectorAll('input:checked')].map(c => +c.value);
+  const allOn = ids.length === TYPES.length;
+  const qs = lastCodes.map(c => c.toLowerCase());
+  const matched = [];
+  for (const it of scanList){
+    const lower = it.name.toLowerCase();
+    const tokens = lower.replace(/\.[^.]+$/, '').split('_').map(s => s.trim());
+    it.hits = lastCodes.filter((c,i) => exact ? tokens.includes(qs[i]) : lower.includes(qs[i]));
+    if (it.hits.length) matched.push(it);
+  }
+  const list = matched.filter(it => it.type ? ids.includes(it.type.id) : allOn);
+  for (const it of list){
+    if (it.file === undefined){ try { it.file = await it.handle.getFile(); } catch { it.file = null; } }
+  }
+  if (my !== searchToken) return;
+  const order = c => lastCodes.indexOf(c);
+  list.sort((a,b) => order(a.hits[0]) - order(b.hits[0]) || (a.type?.id ?? 99) - (b.type?.id ?? 99) || a.name.localeCompare(b.name));
+  found = list; matchedCount = matched.length;
+  [...selected].forEach(k => { if (!found.some(r => r.rel === k)) selected.delete(k); });
+  const label = lastCodes.length === 1 ? `"${lastCodes[0]}"` : `코드 ${lastCodes.length}개`;
+  const hidden = matched.length - found.length;
+  $('#meta').textContent = `${label} 검색 결과 ${found.length}건 · 파일 ${scanList.length}개 확인` +
+    (hidden ? ` · 서류 유형 필터로 ${hidden}건 숨김` : '');
   renderResults();
 }
 function renderResults(){
-  if (!found.length){ $('#results').innerHTML = `<div class="empty">찾은 파일이 없어요. "코드 정확히 일치"를 끄고 다시 검색해보세요.</div>`; return; }
-  $('#results').innerHTML = `<table>
-    <thead><tr><th>유형</th><th>파일명</th><th class="hide-sm">수정일</th><th class="hide-sm">크기</th><th>링크</th></tr></thead>
+  const multi = lastCodes.length > 1;
+  const missing = multi ? lastCodes.filter(c => !found.some(r => r.hits.includes(c))) : [];
+  const miss = missing.length ? `<div class="missing">못 찾은 코드 ${missing.length}개: ${missing.map(esc).join(', ')}
+      <button class="textbtn" id="copyMissing">복사</button></div>` : '';
+  if (!found.length){
+    $('#results').innerHTML = miss + `<div class="empty">${matchedCount
+      ? '찾은 파일이 있지만 서류 유형 필터로 모두 숨겨졌어요. 위에서 서류 유형을 선택해주세요.'
+      : '찾은 파일이 없어요. "코드 정확히 일치"를 끄고 다시 검색해보세요.'}</div>`;
+    bindMissing(missing);
+    return;
+  }
+  const allChecked = found.every(r => selected.has(r.rel));
+  $('#results').innerHTML = miss + `
+    <div class="bulkbar">
+      <span><b id="selCount">${selected.size}</b>개 선택</span>
+      <div class="rowbtns">
+        <button class="btn small" id="btnDlFolder" ${selected.size ? '' : 'disabled'}>선택 파일 폴더에 저장</button>
+        <button class="btn small primary" id="btnDlZip" ${selected.size ? '' : 'disabled'}>선택 파일 ZIP으로 받기</button>
+      </div>
+    </div>
+    <table>
+    <thead><tr><th class="ck"><input type="checkbox" id="ckAll" title="전체 선택" ${allChecked ? 'checked' : ''}></th>
+      <th>유형</th><th>파일명</th>${multi ? '<th>검색어</th>' : ''}<th class="hide-sm">수정일</th><th class="hide-sm">크기</th><th>링크</th></tr></thead>
     <tbody>${found.map((r,i) => `
       <tr>
-        <td><span class="badge">${r.type.id}. ${esc(r.type.name)}</span></td>
+        <td class="ck"><input type="checkbox" data-ck="${i}" ${selected.has(r.rel) ? 'checked' : ''}></td>
+        <td><span class="badge">${r.type ? `${r.type.id}. ${esc(r.type.name)}` : '기타'}</span>
+          ${r.type && r.type !== r.folderType ? `<span class="misfiled" title="파일명의 서류유형과 저장된 폴더가 달라요">⚠ ${esc(r.rel.includes('\\') ? r.rel.split('\\')[0] : '최상위')} 폴더에 있음</span>` : ''}</td>
         <td><button class="link" data-open="${i}" title="새 탭에서 열기">${esc(r.name)}</button></td>
+        ${multi ? `<td><div class="hits">${r.hits.map(h => `<span>${esc(h)}</span>`).join('')}</div></td>` : ''}
         <td class="hide-sm nowrap muted">${r.file ? fmtDate(r.file.lastModified) : '-'}</td>
         <td class="hide-sm nowrap muted">${r.file ? fmtSize(r.file.size) : '-'}</td>
         <td><div class="rowbtns">
@@ -605,11 +676,34 @@ function renderResults(){
           <button class="btn small" data-copydir="${i}">폴더 복사</button>
         </div></td>
       </tr>`).join('')}</tbody></table>`;
+  bindMissing(missing);
+  const syncSel = () => {
+    $('#selCount').textContent = selected.size;
+    $('#btnDlZip').disabled = $('#btnDlFolder').disabled = !selected.size;
+    $('#ckAll').checked = found.every(r => selected.has(r.rel));
+  };
+  $('#ckAll').onchange = e => {
+    found.forEach(r => e.target.checked ? selected.add(r.rel) : selected.delete(r.rel));
+    $('#results').querySelectorAll('[data-ck]').forEach(c => c.checked = e.target.checked);
+    syncSel();
+  };
+  $('#results').querySelectorAll('[data-ck]').forEach(c => c.onchange = () => {
+    const k = found[+c.dataset.ck].rel; c.checked ? selected.add(k) : selected.delete(k); syncSel();
+  });
+  $('#btnDlZip').onclick = downloadZip;
+  $('#btnDlFolder').onclick = downloadToFolder;
   $('#results').querySelectorAll('[data-open]').forEach(b => b.onclick = () => openFile(found[+b.dataset.open]));
   $('#results').querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copyText(found[+b.dataset.copy].path));
   $('#results').querySelectorAll('[data-copydir]').forEach(b => b.onclick = () => {
     const p = found[+b.dataset.copydir].path; copyText(p.slice(0, p.lastIndexOf('\\')));
   });
+}
+function bindMissing(missing){
+  const b = $('#copyMissing'); if (!b) return;
+  b.onclick = async () => {
+    try { await navigator.clipboard.writeText(missing.join('\n')); toast('못 찾은 코드를 복사했어요'); }
+    catch { toast('복사하지 못했어요'); }
+  };
 }
 async function openFile(r){
   const win = window.open('', '_blank');   // 팝업 차단 방지: 클릭 즉시 창을 먼저 연다
@@ -623,9 +717,91 @@ async function openFile(r){
     toast('파일을 열 수 없어요: ' + e.message);
   }
 }
+
+/* ---------- 일괄 다운로드 ---------- */
+const selectedRows = () => found.filter(r => selected.has(r.rel));
+async function busy(btn, text, fn){
+  const old = btn.textContent; btn.disabled = true; btn.textContent = text;
+  try { await fn(); } catch(e){ if (e.name !== 'AbortError') toast('받기 실패: ' + e.message); }
+  finally { btn.textContent = old; btn.disabled = !selected.size; }
+}
+/* ZIP: 공용폴더와 같은 폴더 구조로 담는다 (압축 없이 묶기만 — PDF는 어차피 잘 안 줄어듦) */
+function downloadZip(){
+  const rows = selectedRows(); if (!rows.length) return;
+  const total = rows.reduce((s,r) => s + (r.file ? r.file.size : 0), 0);
+  if (total > 2 * 1024 ** 3){ toast('한 번에 2GB까지 받을 수 있어요. 나눠서 받아주세요'); return; }
+  return busy($('#btnDlZip'), 'ZIP 만드는 중…', async () => {
+    const entries = [];
+    for (const r of rows){
+      const file = await r.handle.getFile();
+      entries.push({name: r.rel.replaceAll('\\', '/'), data: new Uint8Array(await file.arrayBuffer()), time: file.lastModified});
+    }
+    const url = URL.createObjectURL(makeZip(entries));
+    const a = document.createElement('a');
+    a.href = url; a.download = `수출서류_${fmtDate(Date.now()).replaceAll('-', '')}_${rows.length}개.zip`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+    toast(`${rows.length}개 파일을 ZIP으로 받았어요`);
+  });
+}
+/* 폴더에 저장: 고른 폴더에 파일을 그대로 복사 (같은 이름이 있으면 뒤에 (2) 붙임) */
+function downloadToFolder(){
+  const rows = selectedRows(); if (!rows.length) return;
+  if (!('showDirectoryPicker' in window)){ toast('크롬 또는 엣지에서 열어주세요'); return; }
+  return busy($('#btnDlFolder'), '저장 중…', async () => {
+    const dest = await window.showDirectoryPicker({id:'artbox-export-download', mode:'readwrite'});
+    let n = 0;
+    for (const r of rows){
+      const file = await r.handle.getFile();
+      const name = await freeName(dest, r.name);
+      const w = await (await dest.getFileHandle(name, {create:true})).createWritable();
+      await w.write(file); await w.close(); n++;
+    }
+    toast(`"${dest.name}" 폴더에 ${n}개 파일을 저장했어요`);
+  });
+}
+async function freeName(dir, name){
+  const dot = name.lastIndexOf('.'), base = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : '';
+  for (let i = 1; ; i++){
+    const n = i === 1 ? name : `${base} (${i})${ext}`;
+    try { await dir.getFileHandle(n); } catch { return n; }
+  }
+}
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++){ let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(d){ let c = 0xFFFFFFFF; for (let i = 0; i < d.length; i++) c = CRC_TABLE[(c ^ d[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(entries){
+  const enc = new TextEncoder(), parts = [], central = [];
+  let offset = 0;
+  for (const e of entries){
+    const name = enc.encode(e.name), crc = crc32(e.data), size = e.data.length, d = new Date(e.time);
+    const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+    const date = ((Math.max(d.getFullYear(), 1980) - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true);   // 0x0800 = 파일명 UTF-8 (한글)
+    lh.setUint16(10, time, true); lh.setUint16(12, date, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, size, true); lh.setUint32(22, size, true); lh.setUint16(26, name.length, true);
+    parts.push(lh, name, e.data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+    ch.setUint16(12, time, true); ch.setUint16(14, date, true);
+    ch.setUint32(16, crc, true); ch.setUint32(20, size, true); ch.setUint32(24, size, true); ch.setUint16(28, name.length, true);
+    ch.setUint32(42, offset, true);
+    central.push(ch, name);
+    offset += 30 + name.length + size;
+  }
+  const cdSize = central.reduce((s, p) => s + p.byteLength, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end], {type:'application/zip'});
+}
 function clearSearch(){
-  searchToken++; found = [];
-  $('#q').value = ''; $('#results').innerHTML = ''; $('#meta').textContent = '';
+  searchToken++; found = []; scanList = []; lastCodes = []; selected.clear();
+  $('#q').value = ''; fitQ(); $('#results').innerHTML = ''; $('#meta').textContent = '';
 }
 const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? (n/1024).toFixed(0) + ' KB' : (n/1048576).toFixed(1) + ' MB';
 const fmtDate = ms => { const d = new Date(ms); const p = x => String(x).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
@@ -644,11 +820,13 @@ $('#btnReset').onclick = resetForm;
 $('#btnCopyDone').onclick = () => copyText(lastSavedPath);
 $('#btnSameType').onclick = () => openForm(curType.id);
 $('#btnSearch').onclick = search;
-$('#q').onkeydown = e => { if (e.key === 'Enter') search(); };
+$('#q').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); search(); } };
+$('#q').oninput = fitQ;
+$('#exact').onchange = applyFilter;
 $('#toggleAll').onclick = () => {
   const boxes = [...$('#chips').querySelectorAll('input')];
   const all = boxes.every(c => c.checked);
-  boxes.forEach(c => c.checked = !all); syncToggleAll();
+  boxes.forEach(c => c.checked = !all); syncToggleAll(); applyFilter();
 };
 const drop = $('#drop');
 drop.onclick = () => $('#fileInput').click();
