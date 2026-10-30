@@ -125,7 +125,7 @@ h2{font-size:18px; margin:0 0 14px}
 /* ---------- search ---------- */
 .searchrow{display:flex; gap:10px}
 .searchrow{align-items:flex-start}
-.searchrow textarea{flex:1; padding:12px 14px; border:1px solid var(--border); border-radius:12px; background:#fff; font:inherit; font-size:16px; line-height:1.4; resize:none; max-height:200px; overflow-y:auto}
+.searchrow textarea{flex:1; padding:12px 14px; border:1px solid var(--border); border-radius:12px; background:#fff; font:inherit; font-size:16px; line-height:1.4; resize:none; min-height:50px; max-height:200px; overflow-y:auto}
 .searchrow textarea:focus{outline:2px solid var(--brand); outline-offset:-1px; border-color:transparent}
 .searchrow .btn{padding:12px 18px}
 .titlerow{display:flex; justify-content:space-between; align-items:flex-start; gap:12px}
@@ -203,6 +203,33 @@ tbody tr:hover{background:#fcfcfc}
 .addextra{margin-top:7px}
 .incl{display:block; font-size:11.5px; color:var(--muted); margin-top:3px; word-break:break-all}
 .incl b{color:var(--brand-dk)}
+/* ---------- 보고서 팝업 ---------- */
+.modal{position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; padding:20px}
+.mbox{background:#fff; border-radius:16px; width:min(1300px, 100%); max-height:100%; display:flex; flex-direction:column; padding:22px 24px; box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.mhead{display:flex; justify-content:space-between; align-items:center}
+.mhead h2{margin:0}
+.mclose{border:none; background:none; font-size:20px; cursor:pointer; color:var(--muted); padding:4px 8px}
+.mclose:hover{color:var(--text)}
+.rptools{display:flex; gap:14px; align-items:center; margin-bottom:12px; flex-wrap:wrap}
+.rptools input{padding:6px 10px; border:1px solid var(--border); border-radius:8px; width:140px}
+.rptools .btn{margin-left:auto}
+.rpwrap{overflow:auto; border:1px solid var(--border); border-radius:12px}
+table.rp{border:none; border-radius:0; font-size:13px; table-layout:fixed; min-width:980px}
+table.rp col.c0{width:96px} table.rp col.cn{width:72px}
+table.rp th{position:sticky; top:0; z-index:1; background:var(--brand); color:#fff; font-size:12px; text-align:center; padding:7px 4px; line-height:1.3; word-break:keep-all}
+table.rp td{padding:5px 4px; text-align:center; border-left:1px solid var(--border); font-size:13px; vertical-align:middle}
+table.rp td.code{text-align:left; font-weight:700; font-family:ui-monospace,Consolas,monospace; white-space:nowrap; border-left:none}
+table.rp td.has{color:var(--brand-dk); font-weight:700}
+table.rp td.miss{background:#ffc7ce}
+table.rp td.miss.orange{background:#ffe0b2}
+table.rp td.miss.gray{background:#ededed}
+table.rp td.cnt{font-weight:700; color:#9c0006}
+.rp .rsel{display:flex; gap:2px; align-items:center}
+.rp select{flex:1; min-width:0; font-size:11.5px; padding:3px 2px; border:1px solid rgba(0,0,0,.15); border-radius:6px; background:rgba(255,255,255,.85)}
+.rp .memo{border:none; background:none; cursor:pointer; font-size:13px; padding:0 2px; opacity:.6}
+.rp .memo:hover{opacity:1}
+.rp .rmeta{font-size:10.5px; color:#555; margin-top:3px; word-break:break-all; line-height:1.3}
+@media (max-width:760px){ table.rp,table.rp thead,table.rp tbody,table.rp tr,table.rp td{display:revert} table.rp thead{display:table-header-group} }
 [hidden]{display:none !important}
 </style>
 </head>
@@ -328,6 +355,23 @@ tbody tr:hover{background:#fcfcfc}
   </section>
 </main>
 
+<!-- 검색 결과 보고서 팝업 -->
+<div class="modal" id="rpModal" hidden>
+  <div class="mbox" role="dialog" aria-labelledby="rpTitle">
+    <div class="mhead">
+      <h2 id="rpTitle">검색 결과 보고서</h2>
+      <button class="mclose" id="rpClose" title="닫기 (Esc)">✕</button>
+    </div>
+    <p class="sub" style="margin-bottom:14px">빨간 칸은 파일이 없는 서류예요. 사유를 고르면 공용폴더에 바로 저장돼서 다음 사람도 볼 수 있어요. ✎로 메모도 남길 수 있어요.</p>
+    <div class="rptools">
+      <label class="opt" style="color:var(--text)">작성자 <input id="rpBy" placeholder="이름 (선택)" autocomplete="off"></label>
+      <span class="muted" id="rpStatus"></span>
+      <button class="btn primary" id="rpExcel">엑셀로 저장</button>
+    </div>
+    <div class="rpwrap"><table class="rp" id="rpTable"></table></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -341,6 +385,14 @@ const CONFIG = {
   // 추가 제품코드(파일명에 안 들어가는 코드)를 적어 두는 폴더. 공용폴더 안에 PDF마다 작은 txt로 저장
   // 예: _추가제품코드\09_ISO\M01_111_ISO9001_20270101.pdf.txt  (PDF 이름을 바꾸면 연결이 끊어지니 같이 바꿔야 함)
   EXTRA_DIR: '_추가제품코드',
+  // 검색 결과 보고서에서 고른 '없는 서류 사유'를 저장하는 폴더 (코드마다 json 하나, 모두 같이 봄)
+  REASON_DIR: '_없는서류사유',
+  // 사유 선택지. id는 저장용이라 바꾸지 말고, 이름(label)·색(color: red/orange/gray)만 바꾸세요
+  REASONS: [
+    {id:'asked',  label:'문의했으나 없음',  color:'orange'},
+    {id:'notyet', label:'아직 문의 안해봄', color:'red'},
+    {id:'na',     label:'해당 없음',        color:'gray'},
+  ],
 };
 
 /* 입력 항목 정의 */
@@ -525,7 +577,7 @@ function show(id){
 }
 function goHome(){ resetForm(); curType = null; clearSearch(); show('#viewHome'); }
 function goUpload(){ resetForm(); curType = null; show('#viewType'); }
-function goSearch(){ show('#viewSearch'); $('#q').focus(); }
+function goSearch(){ show('#viewSearch'); fitQ(); $('#q').focus(); }
 async function copyText(t){
   try { await navigator.clipboard.writeText(t); }
   catch { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
@@ -1126,7 +1178,10 @@ function typeOfFile(name, folderType){
   return TYPES.find(t => t.id === id) || folderType || null;
 }
 const splitCodes = s => [...new Set(s.split(/[\s,;]+/).map(v => v.trim()).filter(Boolean))];
-function fitQ(){ const q = $('#q'); q.style.height = 'auto'; q.style.height = (q.scrollHeight + 2) + 'px'; }
+function fitQ(){   // 화면이 숨겨져 있으면 높이를 잴 수 없어서 기본 크기로 둔다
+  const q = $('#q'); q.style.height = 'auto';
+  if (q.offsetParent && q.scrollHeight) q.style.height = (q.scrollHeight + 2) + 'px';
+}
 
 let searchToken = 0;
 let scanList = [];       // 마지막 검색 때 읽은 모든 파일 (필터를 바꾸면 이걸로 다시 거름)
@@ -1146,6 +1201,7 @@ async function search(){
   const extraMap = {}, extraPrefix = CONFIG.EXTRA_DIR + '\\';
   for await (const item of walk(root)){
     if (my !== searchToken) return;
+    if (item.rel.startsWith(CONFIG.REASON_DIR + '\\')) continue;   // 보고서 사유 파일
     if (item.rel.startsWith(extraPrefix)){   // 추가 제품코드 txt: 검색 대상 파일이 아니라 코드 목록
       try { extraMap[item.rel.slice(extraPrefix.length).replace(/\.txt$/i, '').toLowerCase()] = parseExtra(await (await item.handle.getFile()).text()); } catch {}
       continue;
@@ -1273,21 +1329,105 @@ async function openFile(r){
   }
 }
 
-/* ---------- 검색 결과 보고서 (엑셀) ----------
-   행 = 검색한 코드, 열 = 1~9번 서류. 파일 수를 적고, 없는 칸은 빨간색 '없음'.
-   서류 유형 필터와 상관없이 1~9번 모두 보여 줌 ('코드 정확히 일치'는 따름). 두 번째 시트 = 파일 목록.
-   외부 라이브러리 없이 xlsx(ZIP + XML)를 직접 만든다 (위 makeZip 사용) */
-async function downloadReport(){
+/* ---------- 검색 결과 보고서 ----------
+   팝업: 행 = 검색한 코드, 열 = 1~9번 서류. 파일 수를 적고, 없는 칸은 빨간색 + 사유 선택.
+   사유는 공용폴더 CONFIG.REASON_DIR\{코드}.json 에 바로 저장 → 다음에 누가 열어도 보임.
+     형식: { "서류번호": {reason, memo, by, at} }   (사유·메모를 다 비우면 지움)
+   서류 유형 필터와 상관없이 1~9번 모두 보여 줌 ('코드 정확히 일치'는 따름).
+   엑셀: 외부 라이브러리 없이 xlsx(ZIP + XML)를 직접 만든다 (위 makeZip 사용) */
+let reasons = {};        // 코드 → { 서류번호: {...} } (팝업을 열 때 공용폴더에서 읽음)
+let reportBy = '';       // 작성자 이름 (탭을 닫으면 사라짐)
+const reasonOf = id => CONFIG.REASONS.find(r => r.id === id);
+const reasonFile = code => clean(code).replace(/^\.+/, '') + '.json';
+const countsOf = code => TYPES.map(t => matchedAll.filter(r => r.type === t && r.hits.includes(code)).length);
+async function reasonDir(create){ return root.getDirectoryHandle(CONFIG.REASON_DIR, {create}); }
+async function readReasons(code){
+  try { return JSON.parse(await (await (await (await reasonDir(false)).getFileHandle(reasonFile(code))).getFile()).text()) || {}; }
+  catch { return {}; }
+}
+async function openReport(){
   if (!lastCodes.length){ toast('먼저 검색해 주세요'); return; }
+  if (!(await ensureRoot())) return;
+  $('#rpModal').hidden = false; $('#rpBy').value = reportBy;
+  $('#rpTable').innerHTML = '<tbody><tr><td style="padding:30px">불러오는 중…</td></tr></tbody>';
   for (const it of matchedAll){
     if (it.file === undefined){ try { it.file = await it.handle.getFile(); } catch { it.file = null; } }
   }
-  const head = ['코드', ...TYPES.map(t => `${t.id}. ${t.name}`), '없는 서류 수'];
-  const rows = lastCodes.map(code => {
-    const counts = TYPES.map(t => matchedAll.filter(r => r.type === t && r.hits.includes(code)).length);
-    return [{v:code, s:5}, ...counts.map(n => n ? {v:n, s:2} : {v:'없음', s:3}),
-            {v:counts.filter(n => !n).length, s:counts.some(n => !n) ? 6 : 2}];
+  reasons = {};
+  for (const code of lastCodes) reasons[code] = await readReasons(code);
+  renderReport();
+}
+function closeReport(){ $('#rpModal').hidden = true; }
+function renderReport(){
+  const opts = CONFIG.REASONS.map(r => `<option value="${r.id}">${esc(r.label)}</option>`).join('');
+  let missingAll = 0, noReason = 0;
+  $('#rpTable').innerHTML = `<colgroup><col class="c0">${TYPES.map(() => '<col>').join('')}<col class="cn"></colgroup>
+    <thead><tr><th>코드</th>${TYPES.map(t => `<th title="${esc(t.name)}">${t.id}. ${esc(t.name)}</th>`).join('')}<th>없는 서류</th></tr></thead>
+    <tbody>${lastCodes.map((code, ci) => {
+      const counts = countsOf(code);
+      const cells = TYPES.map((t, ti) => {
+        if (counts[ti]) return `<td class="has">${counts[ti]}</td>`;
+        missingAll++;
+        const r = reasons[code][t.id] || {}, def = reasonOf(r.reason);
+        if (!def) noReason++;
+        const meta = [r.memo, (r.by || r.at) ? [r.by, r.at].filter(Boolean).join(' ') : ''].filter(Boolean).map(esc).join('<br>');
+        return `<td class="miss ${def ? def.color : ''}">
+          <div class="rsel"><select data-c="${ci}" data-t="${t.id}" title="없음 · 사유를 골라 주세요"><option value="">사유 선택</option>${opts}</select><button class="memo" data-c="${ci}" data-t="${t.id}" title="메모">✎</button></div>
+          ${meta ? `<div class="rmeta">${meta}</div>` : ''}</td>`;
+      }).join('');
+      const miss = counts.filter(n => !n).length;
+      return `<tr><td class="code">${esc(code)}</td>${cells}<td class="${miss ? 'cnt' : 'has'}">${miss}</td></tr>`;
+    }).join('')}</tbody>`;
+  $('#rpTable').querySelectorAll('select').forEach(sel => {
+    sel.value = reasons[lastCodes[+sel.dataset.c]][sel.dataset.t]?.reason || '';
+    sel.onchange = () => setReason(lastCodes[+sel.dataset.c], sel.dataset.t, {reason: sel.value});
   });
+  $('#rpTable').querySelectorAll('.memo').forEach(b => b.onclick = () => {
+    const code = lastCodes[+b.dataset.c], cur = reasons[code][b.dataset.t]?.memo || '';
+    const memo = prompt(`${code} · ${b.dataset.t}. ${TYPES.find(t => t.id === +b.dataset.t).name}\n메모 (비우면 지움)`, cur);
+    if (memo !== null) setReason(code, b.dataset.t, {memo: memo.trim()});
+  });
+  $('#rpStatus').textContent = `코드 ${lastCodes.length}개 · 없는 서류 ${missingAll}칸` + (noReason ? ` · 사유 미입력 ${noReason}칸` : '');
+}
+/* 저장 직전에 공용폴더에서 다시 읽어 그 칸만 바꾼다 (다른 사람이 같은 코드를 고쳤어도 덮어쓰지 않게) */
+async function setReason(code, typeId, patch){
+  if (!(await ensureRoot())) return;
+  try{
+    const data = await readReasons(code);
+    const cur = {...(data[typeId] || {}), ...patch};
+    if (!cur.reason && !cur.memo) delete data[typeId];
+    else data[typeId] = {...cur, by: reportBy || cur.by || '', at: fmtDate(Date.now())};
+    const dir = await reasonDir(true), fname = reasonFile(code);
+    if (!Object.keys(data).length){ try { await dir.removeEntry(fname); } catch {} }
+    else {
+      const w = await (await dir.getFileHandle(fname, {create:true})).createWritable();
+      await w.write(JSON.stringify(data, null, 1)); await w.close();
+    }
+    reasons[code] = data;
+    toast('저장했어요');
+  }catch(e){ toast('사유 저장 실패: ' + e.message); }
+  renderReport();
+}
+function downloadReport(){
+  const head = ['코드', ...TYPES.map(t => `${t.id}. ${t.name}`), '없는 서류 수'];
+  const style = {orange:7, gray:8, red:3};
+  const rows = lastCodes.map(code => {
+    const counts = countsOf(code);
+    return [{v:code, s:5}, ...counts.map((n, ti) => {
+      if (n) return {v:n, s:2};
+      const def = reasonOf(reasons[code]?.[TYPES[ti].id]?.reason);
+      return def ? {v:def.label, s:style[def.color] || 3} : {v:'없음', s:3};
+    }), {v:counts.filter(n => !n).length, s:counts.some(n => !n) ? 6 : 2}];
+  });
+  const why = [];
+  for (const code of lastCodes){
+    const counts = countsOf(code);
+    TYPES.forEach((t, ti) => {
+      const r = reasons[code]?.[t.id];
+      if (!counts[ti] && r) why.push([{v:code, s:4}, {v:`${t.id}. ${t.name}`, s:4}, {v:reasonOf(r.reason)?.label || '', s:4},
+        {v:r.memo || '', s:4}, {v:r.by || '', s:4}, {v:r.at || '', s:4}]);
+    });
+  }
   const list = [];
   for (const code of lastCodes) for (const r of matchedAll) if (r.hits.includes(code)) list.push([
     {v:code, s:4}, {v:r.type ? `${r.type.id}. ${r.type.name}` : '기타', s:4}, {v:r.name, s:4}, {v:r.path, s:4},
@@ -1296,8 +1436,9 @@ async function downloadReport(){
     {v:r.extra.join(', '), s:4},
   ]);
   const xlsx = makeXlsx([
-    {name:'검색 결과', head, rows, widths:[18, ...TYPES.map(() => 15), 12], freeze:true},
+    {name:'검색 결과', head, rows, widths:[18, ...TYPES.map(() => 16), 12], freeze:true},
     {name:'파일 목록', head:['코드','유형','파일명','경로','수정일','폴더 확인','포함된 제품코드'], rows:list, widths:[18,24,48,70,12,22,30], freeze:true, filter:true},
+    {name:'없는 서류 사유', head:['코드','서류','사유','메모','작성자','날짜'], rows:why, widths:[18,28,18,40,12,12], freeze:true, filter:true},
   ]);
   const url = URL.createObjectURL(xlsx);
   const a = document.createElement('a');
@@ -1324,17 +1465,20 @@ ${sh.filter ? `<autoFilter ref="A1:${last}"/>` : ''}</worksheet>`;
 function makeXlsx(sheets){
   const ns = 'http://schemas.openxmlformats.org';
   const border = '<border><left style="thin"><color rgb="FFD0D0D0"/></left><right style="thin"><color rgb="FFD0D0D0"/></right><top style="thin"><color rgb="FFD0D0D0"/></top><bottom style="thin"><color rgb="FFD0D0D0"/></bottom><diagonal/></border>';
-  // 스타일 번호: 1 머리글 · 2 숫자(가운데) · 3 없음(빨강) · 4 글자 · 5 코드(굵게) · 6 빠진 수(빨간 글자)
+  // 스타일 번호: 1 머리글 · 2 숫자(가운데) · 3 없음(빨강) · 4 글자 · 5 코드(굵게) · 6 빠진 수(빨간 글자) · 7 주황 · 8 회색
   const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="${ns}/spreadsheetml/2006/main">
-<fonts count="4"><font><sz val="10"/><name val="맑은 고딕"/></font><font><b/><sz val="10"/><name val="맑은 고딕"/></font>
-<font><b/><sz val="10"/><color rgb="FF9C0006"/><name val="맑은 고딕"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="맑은 고딕"/></font></fonts>
-<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>
+<fonts count="6"><font><sz val="10"/><name val="맑은 고딕"/></font><font><b/><sz val="10"/><name val="맑은 고딕"/></font>
+<font><b/><sz val="10"/><color rgb="FF9C0006"/><name val="맑은 고딕"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="맑은 고딕"/></font>
+<font><b/><sz val="10"/><color rgb="FF8A4B00"/><name val="맑은 고딕"/></font><font><sz val="10"/><color rgb="FF666666"/><name val="맑은 고딕"/></font></fonts>
+<fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FF1F5FD6"/><bgColor indexed="64"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FFFFC7CE"/><bgColor indexed="64"/></patternFill></fill></fills>
+<fill><patternFill patternType="solid"><fgColor rgb="FFFFC7CE"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFFFE0B2"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFEDEDED"/><bgColor indexed="64"/></patternFill></fill></fills>
 <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>${border}</borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="7">
+<cellXfs count="9">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="3" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
 <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
@@ -1342,6 +1486,8 @@ function makeXlsx(sheets){
 <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
 <xf numFmtId="49" fontId="1" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
 <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+<xf numFmtId="0" fontId="4" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="5" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
 </cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
   const files = {
     '[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -1469,7 +1615,12 @@ $('#btnReset').onclick = resetForm;
 $('#btnCopyDone').onclick = () => copyText(lastSavedPath);
 $('#btnSameType').onclick = () => openForm(curType.id);
 $('#btnSearch').onclick = search;
-$('#btnReport').onclick = downloadReport;
+$('#btnReport').onclick = openReport;
+$('#rpClose').onclick = closeReport;
+$('#rpModal').onclick = e => { if (e.target.id === 'rpModal') closeReport(); };
+$('#rpExcel').onclick = downloadReport;
+$('#rpBy').oninput = e => reportBy = e.target.value.trim();
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#rpModal').hidden) closeReport(); });
 $('#q').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); search(); } };
 $('#q').oninput = fitQ;
 $('#exact').onchange = applyFilter;
