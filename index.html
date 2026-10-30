@@ -209,7 +209,7 @@ tbody tr:hover{background:#fcfcfc}
 .mclose:hover{color:var(--text)}
 .rptools{display:flex; gap:14px; align-items:center; margin-bottom:12px; flex-wrap:wrap}
 .rptools input{padding:6px 10px; border:1px solid var(--border); border-radius:8px; width:140px}
-.rptools .btn{margin-left:auto}
+.rptools #rpExcel{margin-left:auto}
 .rpwrap{overflow:auto; border:1px solid var(--border); border-radius:12px}
 table.rp{border:none; border-radius:0; font-size:13px; table-layout:fixed; min-width:980px}
 table.rp col.c0{width:96px} table.rp col.cn{width:72px}
@@ -364,6 +364,7 @@ table.rp td.cnt{font-weight:700; color:#9c0006}
       <label class="opt" style="color:var(--text)">작성자 <input id="rpBy" placeholder="이름 (선택)" autocomplete="off"></label>
       <span class="muted" id="rpStatus"></span>
       <button class="btn primary" id="rpExcel">엑셀로 저장</button>
+      <button class="btn report" id="rpUpdate" title="공용폴더의 없는서류_현황.xlsx에 이 코드들을 더하고 전체를 최신으로 다시 만들어요">업데이트 하기</button>
     </div>
     <div class="rpwrap"><table class="rp" id="rpTable"></table></div>
   </div>
@@ -384,6 +385,8 @@ const CONFIG = {
   EXTRA_DIR: '_추가제품코드',
   // 검색 결과 보고서에서 고른 '없는 서류 사유'를 저장하는 폴더 (코드마다 json 하나, 모두 같이 봄)
   REASON_DIR: '_없는서류사유',
+  // 보고서 '업데이트 하기'가 공용폴더 맨 위에 만들어 두는 누적 엑셀 (여태 업데이트한 모든 코드)
+  REPORT_FILE: '없는서류_현황.xlsx',
   // 사유 선택지. id는 저장용이라 바꾸지 말고, 이름(label)·색(color: red/orange/gray)만 바꾸세요
   REASONS: [
     {id:'asked',  label:'문의했으나 없음',  color:'orange'},
@@ -1184,7 +1187,7 @@ async function search(){
   const extraMap = {}, extraPrefix = CONFIG.EXTRA_DIR + '\\';
   for await (const item of walk(root)){
     if (my !== searchToken) return;
-    if (item.rel.startsWith(CONFIG.REASON_DIR + '\\')) continue;   // 보고서 사유 파일
+    if (item.rel.startsWith(CONFIG.REASON_DIR + '\\') || item.rel === CONFIG.REPORT_FILE) continue;   // 보고서 사유 파일·누적 엑셀
     if (item.rel.startsWith(extraPrefix)){   // 추가 제품코드 txt: 검색 대상 파일이 아니라 코드 목록
       try { extraMap[item.rel.slice(extraPrefix.length).replace(/\.txt$/i, '').toLowerCase()] = parseExtra(await (await item.handle.getFile()).text()); } catch {}
       continue;
@@ -1322,7 +1325,14 @@ let reasons = {};        // 코드 → { 서류번호: {...} } (팝업을 열 �
 let reportBy = '';       // 작성자 이름 (탭을 닫으면 사라짐)
 const reasonOf = id => CONFIG.REASONS.find(r => r.id === id);
 const reasonFile = code => clean(code).replace(/^\.+/, '') + '.json';
-const countsOf = code => TYPES.map(t => matchedAll.filter(r => r.type === t && r.hits.includes(code)).length);
+/* 파일이 이 코드에 해당하는지 (검색과 같은 규칙: 파일명, 없으면 추가 제품코드). 마지막 검색 때 읽은 전체 파일에서 찾음 */
+function fileHas(it, code, exact){
+  const q = code.toLowerCase(), lower = it.name.toLowerCase();
+  if (exact ? lower.replace(/\.[^.]+$/, '').split('_').map(s => s.trim()).includes(q) : lower.includes(q)) return true;
+  return it.extra.some(x => exact ? x.toLowerCase() === q : x.toLowerCase().includes(q));
+}
+const filesOf = code => { const exact = $('#exact').checked; return scanList.filter(it => fileHas(it, code, exact)); };
+const countsOf = code => { const fs = filesOf(code); return TYPES.map(t => fs.filter(r => r.type === t).length); };
 async function reasonDir(create){ return root.getDirectoryHandle(CONFIG.REASON_DIR, {create}); }
 async function readReasons(code){
   try { return JSON.parse(await (await (await (await reasonDir(false)).getFileHandle(reasonFile(code))).getFile()).text()) || {}; }
@@ -1392,9 +1402,56 @@ async function setReason(code, typeId, patch){
   renderReport();
 }
 function downloadReport(){
+  const url = URL.createObjectURL(buildReport(lastCodes));
+  const a = document.createElement('a');
+  a.href = url; a.download = `검색결과보고서_${fmtDate(Date.now()).replaceAll('-', '')}_코드${lastCodes.length}개.xlsx`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+  toast('검색 결과 보고서를 받았어요');
+}
+/* 공용폴더의 누적 엑셀을 다시 만든다: (예전에 업데이트한 코드 + 지금 코드) × 최신 파일·사유.
+   코드 목록은 REASON_DIR\_보고서코드.json에 따로 둠 (엑셀을 읽지 않아도 되게).
+   엑셀에서 직접 고친 내용은 다음 업데이트 때 사라짐 → 사유는 사이트에서 고르도록 안내 시트에 적음 */
+const CODES_FILE = '_보고서코드.json';
+async function updateSharedReport(){
+  if (!lastCodes.length || !(await ensureRoot())) return;
+  const btn = $('#rpUpdate'), old = btn.textContent; btn.disabled = true; btn.textContent = '업데이트 중…';
+  try{
+    const dir = await reasonDir(true);
+    let codes = [];
+    try { codes = JSON.parse(await (await (await dir.getFileHandle(CODES_FILE)).getFile()).text()); } catch {}
+    if (!Array.isArray(codes)) codes = [];
+    const added = lastCodes.filter(c => !codes.some(x => x.toLowerCase() === c.toLowerCase()));
+    codes.push(...added);
+    for (const c of codes) reasons[c] = await readReasons(c);   // 다른 사람이 고른 사유까지 최신으로
+    for (const c of codes) for (const it of filesOf(c)){
+      if (it.file === undefined){ try { it.file = await it.handle.getFile(); } catch { it.file = null; } }
+    }
+    const now = new Date(), stamp = `${fmtDate(now)} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const blob = buildReport(codes, [
+      ['이 파일은 Export Document Archiving 사이트의 검색 결과 보고서 → \'업데이트 하기\'로 자동으로 다시 만들어져요.'],
+      ['여기서 직접 고친 내용은 다음 업데이트 때 사라져요. 없는 서류 사유는 사이트 보고서에서 골라 주세요.'],
+      ['마지막 업데이트: ' + stamp + (reportBy ? ' · ' + reportBy : '')],
+      [`코드 ${codes.length}개`],
+    ]);
+    try{
+      const w = await (await root.getFileHandle(CONFIG.REPORT_FILE, {create:true})).createWritable();
+      await w.write(blob); await w.close();
+    }catch(e){
+      throw new Error(e.name === 'NoModificationAllowedError' || e.name === 'InvalidStateError' || /lock|used|사용/i.test(e.message)
+        ? `누군가 ${CONFIG.REPORT_FILE}을(를) 엑셀로 열어 두어서 고칠 수 없어요. 닫고 다시 눌러 주세요` : e.message);
+    }
+    const w2 = await (await dir.getFileHandle(CODES_FILE, {create:true})).createWritable();
+    await w2.write(JSON.stringify(codes, null, 1)); await w2.close();
+    renderReport();
+    toast(`공용폴더 ${CONFIG.REPORT_FILE}을(를) 업데이트했어요 (코드 ${codes.length}개${added.length ? `, 새로 ${added.length}개` : ''})`);
+  }catch(e){ toast('업데이트 실패: ' + e.message); }
+  finally{ btn.disabled = false; btn.textContent = old; }
+}
+function buildReport(codes, notes){
   const head = ['코드', ...TYPES.map(t => `${t.id}. ${t.name}`), '없는 서류 수'];
   const style = {orange:7, gray:8, red:3};
-  const rows = lastCodes.map(code => {
+  const rows = codes.map(code => {
     const counts = countsOf(code);
     return [{v:code, s:5}, ...counts.map((n, ti) => {
       if (n) return {v:n, s:2};
@@ -1403,7 +1460,7 @@ function downloadReport(){
     }), {v:counts.filter(n => !n).length, s:counts.some(n => !n) ? 6 : 2}];
   });
   const why = [];
-  for (const code of lastCodes){
+  for (const code of codes){
     const counts = countsOf(code);
     TYPES.forEach((t, ti) => {
       const r = reasons[code]?.[t.id];
@@ -1412,7 +1469,7 @@ function downloadReport(){
     });
   }
   const list = [];
-  for (const code of lastCodes) for (const r of matchedAll) if (r.hits.includes(code)) list.push([
+  for (const code of codes) for (const r of filesOf(code)) list.push([
     {v:code, s:4}, {v:r.type ? `${r.type.id}. ${r.type.name}` : '기타', s:4}, {v:r.name, s:4}, {v:r.path, s:4},
     {v:r.file ? fmtDate(r.file.lastModified) : '', s:4},
     {v:r.type && r.type !== r.folderType ? (r.rel.includes('\\') ? r.rel.split('\\')[0] : '최상위') + ' 폴더에 있음' : '', s:4},
@@ -1422,13 +1479,9 @@ function downloadReport(){
     {name:'검색 결과', head, rows, widths:[18, ...TYPES.map(() => 16), 12], freeze:true},
     {name:'파일 목록', head:['코드','유형','파일명','경로','수정일','폴더 확인','포함된 제품코드'], rows:list, widths:[18,24,48,70,12,22,30], freeze:true, filter:true},
     {name:'없는 서류 사유', head:['코드','서류','사유','메모','작성자','날짜'], rows:why, widths:[18,28,18,40,12,12], freeze:true, filter:true},
+    ...(notes ? [{name:'안내', head:['안내'], rows:notes.map(r => r.map(v => ({v, s:4}))), widths:[110]}] : []),
   ]);
-  const url = URL.createObjectURL(xlsx);
-  const a = document.createElement('a');
-  a.href = url; a.download = `검색결과보고서_${fmtDate(Date.now()).replaceAll('-', '')}_코드${lastCodes.length}개.xlsx`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
-  toast('검색 결과 보고서를 받았어요');
+  return xlsx;
 }
 const colName = n => { let s = ''; for (n++; n; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s; return s; };
 const xmlText = v => esc(String(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ''));
@@ -1602,6 +1655,7 @@ $('#btnReport').onclick = openReport;
 $('#rpClose').onclick = closeReport;
 $('#rpModal').onclick = e => { if (e.target.id === 'rpModal') closeReport(); };
 $('#rpExcel').onclick = downloadReport;
+$('#rpUpdate').onclick = updateSharedReport;
 $('#rpBy').oninput = e => reportBy = e.target.value.trim();
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#rpModal').hidden) closeReport(); });
 $('#q').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); search(); } };
