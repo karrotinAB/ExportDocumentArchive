@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수출서류 보관함</title>
+<!--
+  ARTBOX 글로벌사업부 · 수출서류 보관함
+  - 외부 라이브러리/폰트/네트워크 요청 없음. 파일은 브라우저에서 바로 회사 공용폴더로만 저장됩니다.
+  - 브라우저 저장소(localStorage 등)를 사용하지 않습니다. 탭을 닫으면 아무 정보도 남지 않습니다.
+  - Chrome 또는 Edge에서 사용하세요.
+  - 설정은 아래 <script> 맨 위 CONFIG / TYPES 에서 수정하세요.
+-->
+<style>
+:root{
+  --bg:#f6f5f2; --surface:#ffffff; --surface-2:#f0eee9; --border:#e2dfd8;
+  --text:#1d1c1a; --muted:#6f6b63; --accent:#e4572e; --accent-ink:#ffffff;
+  --ok:#2f8f5b; --warn:#b7791f; --danger:#c0392b; --chip:#f3e4dd;
+  --shadow:0 1px 2px rgba(0,0,0,.04),0 6px 20px rgba(0,0,0,.05);
+  --radius:14px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#151413; --surface:#1f1d1b; --surface-2:#292624; --border:#38342f;
+    --text:#f1eee9; --muted:#a39d93; --accent:#ff7a50; --accent-ink:#1a0d07;
+    --ok:#5cc58a; --warn:#e5ad4f; --danger:#ff6b5b; --chip:#3a2a23;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic","맑은 고딕",system-ui,sans-serif;
+  font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+button,input,select{font:inherit;color:inherit}
+header{
+  position:sticky; top:0; z-index:10; background:var(--surface);
+  border-bottom:1px solid var(--border);
+}
+.bar{max-width:1000px; margin:0 auto; padding:14px 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap}
+.brand{font-weight:800; letter-spacing:-.01em; cursor:pointer}
+.brand small{display:block; font-weight:500; color:var(--muted); font-size:12px}
+.conn{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.status{display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--muted)}
+.status::before{content:""; width:8px; height:8px; border-radius:50%; background:var(--muted)}
+.status.on{color:var(--ok)} .status.on::before{background:var(--ok)}
+main{max-width:1000px; margin:0 auto; padding:24px 16px 80px}
+.btn{
+  border:1px solid var(--border); background:var(--surface); border-radius:10px;
+  padding:9px 14px; cursor:pointer; font-weight:600; transition:.15s;
+}
+.btn:hover{border-color:var(--text)}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.05)}
+.btn.small{padding:5px 10px; font-size:13px; border-radius:8px}
+.btn:disabled{opacity:.4; cursor:not-allowed}
+.link{background:none; border:none; padding:0; color:var(--accent); cursor:pointer; font-weight:600; text-align:left; word-break:break-all}
+.link:hover{text-decoration:underline}
+.back{background:none; border:none; color:var(--muted); cursor:pointer; padding:0; margin-bottom:16px; font-weight:600}
+.back:hover{color:var(--text)}
+h1{font-size:26px; letter-spacing:-.02em; margin:0 0 6px}
+h2{font-size:18px; margin:0 0 14px}
+.sub{color:var(--muted); margin:0 0 24px}
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:22px}
+.notice{border:1px dashed var(--warn); color:var(--warn); border-radius:10px; padding:10px 12px; font-size:13px; margin-bottom:16px}
+
+/* home */
+.home{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:8px}
+.big{
+  text-align:left; border:1px solid var(--border); background:var(--surface); border-radius:20px;
+  padding:34px 28px; cursor:pointer; box-shadow:var(--shadow); transition:.15s; min-height:200px;
+  display:flex; flex-direction:column; justify-content:space-between;
+}
+.big:hover{transform:translateY(-2px); border-color:var(--accent)}
+.big .ico{font-size:34px; line-height:1}
+.big b{display:block; font-size:22px; margin-top:20px}
+.big span{color:var(--muted); font-size:14px}
+
+/* type grid */
+.types{display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:12px}
+.type{
+  text-align:left; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:16px; cursor:pointer; transition:.15s;
+}
+.type:hover{border-color:var(--accent)}
+.type .num{display:inline-block; font-size:12px; font-weight:800; color:var(--accent); background:var(--chip); border-radius:6px; padding:1px 7px}
+.type b{display:block; margin:8px 0 2px; font-size:16px}
+.type .en{color:var(--muted); font-size:12px}
+.type code{display:block; margin-top:10px; font-size:11.5px; color:var(--muted); word-break:break-all; font-family:ui-monospace,Consolas,monospace}
+
+/* form */
+.selected{display:flex; align-items:center; gap:10px; margin-bottom:18px; flex-wrap:wrap}
+.selected .num{font-size:12px; font-weight:800; color:var(--accent); background:var(--chip); border-radius:6px; padding:2px 8px}
+.selected b{font-size:18px}
+.selected .folder{color:var(--muted); font-size:13px}
+.form{display:grid; grid-template-columns:1fr 1fr; gap:14px 16px}
+.field label{display:block; font-size:13px; font-weight:700; margin-bottom:6px}
+.field label em{font-style:normal; font-weight:500; color:var(--muted)}
+.field input,.field select{
+  width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--surface);
+}
+.field input:focus,.field select:focus{outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent}
+.field input[readonly]{background:var(--surface-2); color:var(--muted)}
+.drop{
+  margin-top:20px; border:2px dashed var(--border); border-radius:var(--radius); padding:26px; text-align:center;
+  color:var(--muted); cursor:pointer; transition:.15s;
+}
+.drop.over,.drop:hover{border-color:var(--accent); color:var(--text)}
+.drop.has{border-style:solid; border-color:var(--ok); color:var(--text)}
+.preview{
+  margin-top:20px; background:var(--surface-2); border-radius:12px; padding:14px 16px;
+}
+.preview .lbl{font-size:12px; color:var(--muted); font-weight:700; margin-bottom:4px}
+.preview .name{font-family:ui-monospace,Consolas,monospace; font-size:14px; word-break:break-all}
+.preview .name .ph{color:var(--danger); opacity:.75}
+.preview .path{font-size:12px; color:var(--muted); margin-top:6px; word-break:break-all}
+.actions{display:flex; gap:10px; justify-content:flex-end; margin-top:18px; flex-wrap:wrap}
+.done{text-align:center; padding:30px 10px}
+.done .check{font-size:40px}
+.done code{display:block; margin:12px auto; font-family:ui-monospace,Consolas,monospace; word-break:break-all; background:var(--surface-2); padding:10px; border-radius:10px; max-width:640px}
+
+/* search */
+.searchrow{display:flex; gap:10px}
+.searchrow input{flex:1; padding:12px 14px; border:1px solid var(--border); border-radius:12px; background:var(--surface); font-size:16px}
+.searchrow input:focus{outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent}
+.filters{margin-top:16px}
+.filters .head{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:10px; flex-wrap:wrap}
+.filters .head span{font-size:13px; font-weight:700}
+.chips{display:flex; flex-wrap:wrap; gap:8px}
+.chip{position:relative}
+.chip input{position:absolute; opacity:0; pointer-events:none}
+.chip span{
+  display:inline-block; padding:6px 12px; border:1px solid var(--border); border-radius:999px; font-size:13px;
+  cursor:pointer; user-select:none; background:var(--surface);
+}
+.chip input:checked + span{background:var(--chip); border-color:var(--accent); color:var(--text); font-weight:700}
+.chip input:focus-visible + span{outline:2px solid var(--accent)}
+.opt{display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); cursor:pointer}
+.meta{margin:20px 0 10px; font-size:13px; color:var(--muted)}
+table{width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden}
+th,td{padding:11px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:middle; font-size:14px}
+th{font-size:12px; color:var(--muted); background:var(--surface-2); font-weight:700}
+tr:last-child td{border-bottom:none}
+.badge{display:inline-block; font-size:11.5px; font-weight:700; background:var(--chip); border-radius:6px; padding:2px 7px; white-space:nowrap}
+.rowbtns{display:flex; gap:6px; flex-wrap:wrap}
+.muted{color:var(--muted)}
+.nowrap{white-space:nowrap}
+
+#toast{
+  position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(20px); opacity:0;
+  background:var(--text); color:var(--bg); padding:10px 16px; border-radius:10px; font-size:14px;
+  transition:.2s; pointer-events:none; max-width:90vw; text-align:center;
+}
+#toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+
+@media (max-width:680px){
+  .home,.form{grid-template-columns:1fr}
+  .hide-sm{display:none}
+  table,thead,tbody,tr,td{display:block}
+  thead{display:none}
+  tr{border-bottom:1px solid var(--border)}
+  td{border:none; padding:6px 12px}
+}
+[hidden]{display:none !important}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <div class="brand" id="brand">수출서류 보관함<small>ARTBOX 글로벌사업부</small></div>
+    <div class="conn">
+      <span class="status" id="connStatus">공용폴더 미연결</span>
+      <button class="btn small" id="btnConnect">공용폴더 연결</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="notice" id="pathWarn" hidden></div>
+
+  <!-- 홈 -->
+  <section id="viewHome">
+    <h1>무엇을 할까요?</h1>
+    <p class="sub">파일은 회사 공용폴더에만 저장되고, 인터넷으로는 전송되지 않습니다.</p>
+    <div class="home">
+      <button class="big" id="goUpload">
+        <div class="ico">⬆︎</div>
+        <div><b>파일 업로드</b><span>서류 유형을 고르고 정보를 넣으면 파일명이 자동으로 정해져 저장돼요</span></div>
+      </button>
+      <button class="big" id="goSearch">
+        <div class="ico">⌕</div>
+        <div><b>파일 찾기</b><span>제품코드로 관련 서류를 한 번에 찾아요</span></div>
+      </button>
+    </div>
+  </section>
+
+  <!-- 업로드: 1단계 유형 선택 -->
+  <section id="viewType" hidden>
+    <button class="back" data-home>← 홈으로</button>
+    <h1>어떤 서류인가요?</h1>
+    <p class="sub">유형에 따라 저장 폴더와 파일명 규칙이 정해집니다.</p>
+    <div class="types" id="typeGrid"></div>
+  </section>
+
+  <!-- 업로드: 2단계 정보 입력 -->
+  <section id="viewForm" hidden>
+    <button class="back" id="backToType">← 서류 유형 다시 선택</button>
+    <div class="card">
+      <div class="selected" id="selectedType"></div>
+      <div class="form" id="formFields"></div>
+      <div class="drop" id="drop" tabindex="0">
+        <div id="dropText">PDF 파일을 여기에 끌어다 놓거나 클릭해서 선택하세요</div>
+      </div>
+      <input type="file" id="fileInput" accept=".pdf,application/pdf" hidden>
+      <div class="preview">
+        <div class="lbl">저장될 파일명</div>
+        <div class="name" id="previewName"></div>
+        <div class="path" id="previewPath"></div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="btnReset">입력 초기화</button>
+        <button class="btn primary" id="btnSave" disabled>공용폴더에 저장</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 업로드: 완료 -->
+  <section id="viewDone" hidden>
+    <div class="card done">
+      <div class="check">✓</div>
+      <h2>저장했어요</h2>
+      <code id="donePath"></code>
+      <div class="actions" style="justify-content:center">
+        <button class="btn" id="btnCopyDone">경로 복사</button>
+        <button class="btn" id="btnSameType">같은 유형 계속 올리기</button>
+        <button class="btn primary" data-home>홈으로</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 찾기 -->
+  <section id="viewSearch" hidden>
+    <button class="back" data-home>← 홈으로</button>
+    <h1>파일 찾기</h1>
+    <p class="sub">제품코드를 입력하세요. 업체코드나 인보이스 넘버로도 찾을 수 있어요.</p>
+    <div class="searchrow">
+      <input id="q" placeholder="예: 8801234567890" autocomplete="off">
+      <button class="btn primary" id="btnSearch">검색</button>
+    </div>
+    <div class="filters">
+      <div class="head">
+        <span>서류 유형</span>
+        <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap">
+          <label class="opt"><input type="checkbox" id="exact" checked> 코드 정확히 일치</label>
+          <button class="link" id="toggleAll" style="font-size:13px">전체 해제</button>
+        </div>
+      </div>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div class="meta" id="meta"></div>
+    <div id="results"></div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+/* =========================================================
+   설정 — 필요하면 여기만 고치면 됩니다
+   ========================================================= */
+const CONFIG = {
+  // "공용폴더 연결"에서 선택할 폴더의 실제 네트워크 경로 (경로 복사에 사용)
+  // 예: '\\\\192.168.250.12\\글로벌사업부\\수출서류'  ← 역슬래시는 두 번씩 써야 해요
+  BASE_UNC: '\\\\192.168.250.30\\수출서류아카이빙',
+};
+
+/* 입력 항목 정의 */
+const FIELDS = {
+  buyer:     {label:'수출(바이어) 업체코드', kind:'text', ph:'예: CASIA01'},
+  pref:      {label:'특혜 / 비특혜', kind:'select', options:['특혜','비특혜']},
+  country:   {label:'국가', kind:'text', ph:'예: KZ'},
+  invoice:   {label:'관련 인보이스 넘버', kind:'text', ph:'예: INV26-0012'},
+  issueDate: {label:'발급일자', kind:'date'},
+  maker:     {label:'제조 업체코드', kind:'text', ph:'예: M0123'},
+  product:   {label:'제품코드', kind:'text', ph:'예: 8801234567890'},
+  agency:    {label:'성적서 발급기관 약칭', kind:'text', ph:'예: KTR'},
+  age:       {label:'판정연령', kind:'text', optional:true, ph:'예: 3+  (해당 없으면 비워두세요)'},
+  lot:       {label:'LOT / BATCH 번호', kind:'text', ph:'예: L240915'},
+  expiry:    {label:'유효기간', kind:'date'},
+};
+const f   = (k, over={}) => ({key:k, ...FIELDS[k], ...over});
+const doc = v => ({key:'docType', label:'서류유형', kind:'fixed', value:v});
+
+/* 서류 유형 정의 — 순서대로 파일명이 만들어집니다. folder = 공용폴더 안의 저장 폴더 */
+const TYPES = [
+  {id:1, name:'원산지증명서', en:'Certificate of Origin (CO)', folder:'01_원산지증명서(CO)',
+   parts:[f('buyer'), f('pref'), f('country'), doc('CO'), f('invoice'), f('issueDate')]},
+  {id:2, name:'시험성적서', en:'Technical Report for CPC', folder:'02_시험성적서(TR)',
+   parts:[f('maker'), f('product'), f('agency'), doc('TR'), f('age'), f('issueDate')]},
+  {id:3, name:'CPC 인증서', en:'Certificate of Compliance for CPSIA', folder:'03_CPC인증서',
+   parts:[f('maker'), f('product'), doc('CPC')]},
+  {id:4, name:'COA', en:'Certificate of Analysis', folder:'04_COA',
+   parts:[f('product'), f('lot'), doc('COA'), f('expiry', {label:'제품 유효기간'})]},
+  {id:5, name:'MSDS · SDS · GMP · HACCP', en:'안전 · 위생 관련 서류', folder:'05_MSDS_SDS_GMP_HACCP',
+   parts:[f('product'), {key:'docType', label:'서류유형', kind:'select', options:['MSDS','SDS','GMP','HACCP']},
+          f('expiry', {label:'유효기한', optional:true})]},
+  {id:6, name:'KC 인증서', en:'KC Certificate', folder:'06_KC인증서',
+   parts:[f('product'), doc('KC'), f('expiry')]},
+  {id:7, name:'GMP', en:'Certificate of GMP', folder:'07_GMP',
+   parts:[f('maker'), f('product'), doc('GMP'), f('expiry')]},
+  {id:8, name:'CGMP', en:'Cosmetic GMP', folder:'08_CGMP',
+   parts:[f('maker'), f('product'), doc('CGMP')]},
+  {id:9, name:'ISO', en:'ISO Certificate', folder:'09_ISO',
+   parts:[f('maker'), f('product'), {key:'docType', label:'서류유형', kind:'text', value:'ISO', ph:'예: ISO9001'},
+          f('expiry', {label:'만료일'})]},
+];
+
+/* =========================================================
+   상태 (메모리에만 존재 — 탭을 닫으면 사라짐)
+   ========================================================= */
+let root = null;        // 공용폴더 핸들
+let curType = null;     // 선택한 서류 유형
+let curFile = null;     // 올린 파일
+let lastSavedPath = '';
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- 공통 ---------- */
+let toastTimer;
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+}
+function show(id){
+  ['#viewHome','#viewType','#viewForm','#viewDone','#viewSearch'].forEach(v => $(v).hidden = (v !== id));
+  window.scrollTo(0,0);
+}
+function goHome(){
+  resetForm(); curType = null;
+  clearSearch();
+  show('#viewHome');
+}
+async function copyText(t){
+  try { await navigator.clipboard.writeText(t); }
+  catch { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+  toast('경로를 복사했어요. 탐색기 주소창에 붙여넣으세요');
+}
+const joinPath = (...p) => p.filter(Boolean).join('\\');
+
+/* ---------- 공용폴더 연결 ---------- */
+async function connect(){
+  if (!('showDirectoryPicker' in window)){ toast('크롬 또는 엣지에서 열어주세요'); return false; }
+  try{
+    root = await window.showDirectoryPicker({id:'artbox-export-docs', mode:'readwrite'});
+    updateConn();
+    const made = await ensureTypeFolders();
+    toast(made ? `"${root.name}" 연결 · 서류 폴더 ${made}개를 새로 만들었어요` : `"${root.name}" 폴더에 연결했어요`);
+    return true;
+  }catch(e){
+    if (e.name !== 'AbortError') toast('폴더 연결 실패: ' + e.message);
+    return false;
+  }
+}
+/* 1~9번 서류 폴더가 없으면 만들어둔다. 새로 만든 개수를 돌려줌 */
+async function ensureTypeFolders(){
+  let made = 0;
+  for (const t of TYPES){
+    try { await root.getDirectoryHandle(t.folder); }
+    catch {
+      try { await root.getDirectoryHandle(t.folder, {create:true}); made++; }
+      catch (e) { toast(`폴더 생성 실패 (${t.folder}): ${e.message}`); }
+    }
+  }
+  return made;
+}
+async function ensureRoot(){
+  if (!root){ toast('먼저 공용폴더를 연결해주세요'); return await connect(); }
+  if ((await root.queryPermission({mode:'readwrite'})) !== 'granted'){
+    if ((await root.requestPermission({mode:'readwrite'})) !== 'granted'){ toast('폴더 접근이 허용되지 않았어요'); return false; }
+  }
+  return true;
+}
+function updateConn(){
+  const s = $('#connStatus');
+  if (root){ s.textContent = `연결됨 · ${root.name}`; s.classList.add('on'); $('#btnConnect').textContent = '다시 연결'; }
+  const expected = CONFIG.BASE_UNC.split('\\').filter(Boolean).pop();
+  const w = $('#pathWarn');
+  if (root && expected && root.name !== expected){
+    w.hidden = false;
+    w.textContent = `연결한 폴더(${root.name})가 설정된 경로(${CONFIG.BASE_UNC})의 폴더명과 달라요. 저장은 되지만 "경로 복사"가 틀릴 수 있으니 CONFIG.BASE_UNC를 확인해주세요.`;
+  } else w.hidden = true;
+  updateSave();
+}
+
+/* ---------- 업로드: 유형 선택 ---------- */
+function patternOf(t){
+  return t.parts.map(p => p.kind === 'fixed' ? p.value : (p.optional ? `(${p.label})` : `[${p.label}]`)).join('_') + '.pdf';
+}
+function renderTypes(){
+  $('#typeGrid').innerHTML = TYPES.map(t => `
+    <button class="type" data-id="${t.id}">
+      <span class="num">${t.id}</span>
+      <b>${esc(t.name)}</b><span class="en">${esc(t.en)}</span>
+      <code>${esc(patternOf(t))}</code>
+    </button>`).join('');
+  $('#typeGrid').querySelectorAll('.type').forEach(b => b.onclick = () => openForm(+b.dataset.id));
+}
+
+/* ---------- 업로드: 정보 입력 ---------- */
+function openForm(id){
+  curType = TYPES.find(t => t.id === id);
+  resetForm();
+  $('#selectedType').innerHTML = `<span class="num">${curType.id}</span><b>${esc(curType.name)}</b>
+    <span class="folder">저장 폴더: ${esc(curType.folder)}</span>`;
+  $('#formFields').innerHTML = curType.parts.map((p,i) => {
+    const id = `fld_${i}`;
+    const opt = p.optional ? ' <em>(선택)</em>' : '';
+    let input;
+    if (p.kind === 'fixed')      input = `<input id="${id}" value="${esc(p.value)}" readonly>`;
+    else if (p.kind === 'select')input = `<select id="${id}"><option value="">선택하세요</option>${p.options.map(o=>`<option>${esc(o)}</option>`).join('')}</select>`;
+    else if (p.kind === 'date')  input = `<input id="${id}" type="date">`;
+    else                         input = `<input id="${id}" value="${esc(p.value||'')}" placeholder="${esc(p.ph||'')}" autocomplete="off">`;
+    return `<div class="field"><label for="${id}">${esc(p.label)}${opt}</label>${input}</div>`;
+  }).join('');
+  $('#formFields').querySelectorAll('input,select').forEach(el => { el.oninput = updatePreview; el.onchange = updatePreview; });
+  updatePreview();
+  show('#viewForm');
+  const first = $('#formFields').querySelector('input:not([readonly]),select'); if (first) first.focus();
+}
+function clean(v){
+  return v.trim()
+    .replace(/[\\/:*?"<>|]/g, '')   // 윈도우 파일명에 못 쓰는 문자 제거
+    .replace(/_/g, '-')             // 구분자(_)와 겹치지 않게
+    .replace(/\s+/g, ' ');
+}
+function valueOf(p, i){
+  if (p.kind === 'fixed') return p.value;
+  const v = $(`#fld_${i}`).value;
+  if (p.kind === 'date') return v ? v.replaceAll('-', '') : '';
+  return clean(v);
+}
+function buildName(){
+  let missing = [];
+  const segs = curType.parts.map((p,i) => {
+    const v = valueOf(p,i);
+    if (!v){ if (!p.optional) missing.push(p.label); return null; }
+    return v;
+  });
+  return {name: segs.filter(Boolean).join('_') + '.pdf', missing};
+}
+function updatePreview(){
+  if (!curType) return;
+  const html = curType.parts.map((p,i) => {
+    const v = valueOf(p,i);
+    if (v) return esc(v);
+    return p.optional ? null : `<span class="ph">[${esc(p.label)}]</span>`;
+  }).filter(Boolean).join('_') + '.pdf';
+  $('#previewName').innerHTML = html;
+  const {name} = buildName();
+  $('#previewPath').textContent = '저장 위치: ' + joinPath(CONFIG.BASE_UNC, curType.folder, name);
+  updateSave();
+}
+function updateSave(){
+  if (!curType){ $('#btnSave').disabled = true; return; }
+  const {missing} = buildName();
+  $('#btnSave').disabled = !(curFile && missing.length === 0);
+}
+function setFile(file){
+  if (!file) return;
+  if (!/\.pdf$/i.test(file.name)){ toast('PDF 파일만 올릴 수 있어요'); return; }
+  curFile = file;
+  $('#drop').classList.add('has');
+  $('#dropText').innerHTML = `📄 <b>${esc(file.name)}</b> <span class="muted">(${fmtSize(file.size)})</span><br><span class="muted" style="font-size:13px">다른 파일로 바꾸려면 클릭</span>`;
+  updateSave();
+}
+function resetForm(){
+  curFile = null;
+  $('#fileInput').value = '';
+  $('#drop').classList.remove('has');
+  $('#dropText').textContent = 'PDF 파일을 여기에 끌어다 놓거나 클릭해서 선택하세요';
+  if (curType) $('#formFields').querySelectorAll('input:not([readonly]),select').forEach((el) => {
+    const i = +el.id.split('_')[1]; const p = curType.parts[i];
+    el.value = (p.kind === 'text' && p.value) ? p.value : '';
+  });
+  updatePreview();
+}
+async function save(){
+  const {name, missing} = buildName();
+  if (missing.length){ toast('빠진 항목: ' + missing.join(', ')); return; }
+  if (!curFile){ toast('파일을 올려주세요'); return; }
+  if (!(await ensureRoot())) return;
+  const btn = $('#btnSave'); btn.disabled = true; btn.textContent = '저장 중…';
+  try{
+    const dir = await root.getDirectoryHandle(curType.folder, {create:true});
+    let exists = false;
+    try { await dir.getFileHandle(name); exists = true; } catch {}
+    if (exists && !confirm(`같은 이름의 파일이 이미 있어요.\n\n${name}\n\n덮어쓸까요?`)) return;
+    const fh = await dir.getFileHandle(name, {create:true});
+    const w = await fh.createWritable();
+    await w.write(curFile); await w.close();
+    lastSavedPath = joinPath(CONFIG.BASE_UNC, curType.folder, name);
+    $('#donePath').textContent = lastSavedPath;
+    resetForm();
+    show('#viewDone');
+  }catch(e){
+    toast('저장 실패: ' + e.message);
+  }finally{
+    btn.textContent = '공용폴더에 저장'; updateSave();
+  }
+}
+
+/* ---------- 찾기 ---------- */
+function renderChips(){
+  $('#chips').innerHTML = TYPES.map(t => `
+    <label class="chip"><input type="checkbox" value="${t.id}" checked><span>${t.id}. ${esc(t.name)}</span></label>`).join('');
+  $('#chips').querySelectorAll('input').forEach(c => c.onchange = syncToggleAll);
+}
+function syncToggleAll(){
+  const all = [...$('#chips').querySelectorAll('input')].every(c => c.checked);
+  $('#toggleAll').textContent = all ? '전체 해제' : '전체 선택';
+}
+async function* walk(dir, prefix=''){
+  for await (const [name, h] of dir.entries()){
+    const rel = prefix ? prefix + '\\' + name : name;
+    if (h.kind === 'file') yield {name, rel, handle:h};
+    else yield* walk(h, rel);
+  }
+}
+let searchToken = 0;
+let found = [];
+async function search(){
+  const q = $('#q').value.trim().toLowerCase();
+  const ids = [...$('#chips').querySelectorAll('input:checked')].map(c => +c.value);
+  if (!ids.length){ toast('서류 유형을 하나 이상 선택해주세요'); return; }
+  if (!q){ toast('제품코드를 입력해주세요'); return; }
+  if (!(await ensureRoot())) return;
+  const exact = $('#exact').checked;
+  const my = ++searchToken;
+  found = []; let scanned = 0;
+  $('#results').innerHTML = '';
+  $('#meta').textContent = '검색 중…';
+  for (const t of TYPES.filter(t => ids.includes(t.id))){
+    let dir;
+    try { dir = await root.getDirectoryHandle(t.folder); } catch { continue; }
+    for await (const item of walk(dir)){
+      if (my !== searchToken) return;
+      scanned++;
+      if (scanned % 200 === 0) $('#meta').textContent = `검색 중… ${scanned}개 확인`;
+      const lower = item.name.toLowerCase();
+      const tokens = lower.replace(/\.[^.]+$/, '').split('_');
+      if (exact ? tokens.includes(q) : lower.includes(q)){
+        let file = null; try { file = await item.handle.getFile(); } catch {}
+        found.push({...item, type:t, file, path: joinPath(CONFIG.BASE_UNC, t.folder, item.rel)});
+      }
+    }
+  }
+  if (my !== searchToken) return;
+  found.sort((a,b) => a.type.id - b.type.id || a.name.localeCompare(b.name));
+  $('#meta').textContent = `"${$('#q').value.trim()}" 검색 결과 ${found.length}건 · 파일 ${scanned}개 확인`;
+  renderResults();
+}
+function renderResults(){
+  if (!found.length){ $('#results').innerHTML = `<div class="card muted" style="text-align:center">찾은 파일이 없어요. "코드 정확히 일치"를 끄고 다시 검색해보세요.</div>`; return; }
+  $('#results').innerHTML = `<table>
+    <thead><tr><th>유형</th><th>파일명</th><th class="hide-sm">수정일</th><th class="hide-sm">크기</th><th>링크</th></tr></thead>
+    <tbody>${found.map((r,i) => `
+      <tr>
+        <td><span class="badge">${r.type.id}. ${esc(r.type.name)}</span></td>
+        <td><button class="link" data-open="${i}" title="새 탭에서 열기">${esc(r.name)}</button></td>
+        <td class="hide-sm nowrap muted">${r.file ? fmtDate(r.file.lastModified) : '-'}</td>
+        <td class="hide-sm nowrap muted">${r.file ? fmtSize(r.file.size) : '-'}</td>
+        <td><div class="rowbtns">
+          <button class="btn small" data-copy="${i}" title="${esc(r.path)}">경로 복사</button>
+          <button class="btn small" data-copydir="${i}">폴더 복사</button>
+        </div></td>
+      </tr>`).join('')}</tbody></table>`;
+  $('#results').querySelectorAll('[data-open]').forEach(b => b.onclick = () => openFile(found[+b.dataset.open]));
+  $('#results').querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copyText(found[+b.dataset.copy].path));
+  $('#results').querySelectorAll('[data-copydir]').forEach(b => b.onclick = () => {
+    const p = found[+b.dataset.copydir].path; copyText(p.slice(0, p.lastIndexOf('\\')));
+  });
+}
+async function openFile(r){
+  const win = window.open('', '_blank');   // 팝업 차단 방지: 클릭 즉시 창을 먼저 연다
+  try{
+    const file = await r.handle.getFile();
+    const url = URL.createObjectURL(file);  // 브라우저 메모리 안에서만 쓰는 임시 주소
+    if (win) win.location.href = url; else window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+  }catch(e){
+    if (win) win.close();
+    toast('파일을 열 수 없어요: ' + e.message);
+  }
+}
+function clearSearch(){
+  searchToken++; found = [];
+  $('#q').value = ''; $('#results').innerHTML = ''; $('#meta').textContent = '';
+}
+const fmtSize = n => n < 1024 ? n + ' B' : n < 1048576 ? (n/1024).toFixed(0) + ' KB' : (n/1048576).toFixed(1) + ' MB';
+const fmtDate = ms => { const d = new Date(ms); const p = x => String(x).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+
+/* ---------- 이벤트 ---------- */
+$('#btnConnect').onclick = connect;
+$('#brand').onclick = goHome;
+document.querySelectorAll('[data-home]').forEach(b => b.onclick = goHome);
+$('#goUpload').onclick = () => show('#viewType');
+$('#goSearch').onclick = () => { show('#viewSearch'); $('#q').focus(); };
+$('#backToType').onclick = () => { resetForm(); show('#viewType'); };
+$('#btnSave').onclick = save;
+$('#btnReset').onclick = resetForm;
+$('#btnCopyDone').onclick = () => copyText(lastSavedPath);
+$('#btnSameType').onclick = () => openForm(curType.id);
+$('#btnSearch').onclick = search;
+$('#q').onkeydown = e => { if (e.key === 'Enter') search(); };
+$('#toggleAll').onclick = () => {
+  const boxes = [...$('#chips').querySelectorAll('input')];
+  const all = boxes.every(c => c.checked);
+  boxes.forEach(c => c.checked = !all); syncToggleAll();
+};
+const drop = $('#drop');
+drop.onclick = () => $('#fileInput').click();
+drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#fileInput').click(); } };
+$('#fileInput').onchange = e => setFile(e.target.files[0]);
+['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => setFile(e.dataTransfer.files[0]));
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => e.preventDefault());
+
+renderTypes();
+renderChips();
+if (!('showDirectoryPicker' in window)){
+  const w = $('#pathWarn'); w.hidden = false;
+  w.textContent = '이 브라우저는 폴더 저장을 지원하지 않아요. 크롬 또는 엣지에서 열어주세요.';
+}
+</script>
+</body>
+</html>
