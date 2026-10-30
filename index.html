@@ -6,7 +6,10 @@
 <title>ARTBOX Export Document Archiving</title>
 <!--
   ARTBOX Export Document Archiving
-  - 외부 라이브러리/폰트/네트워크 요청 없음. 파일은 브라우저에서 바로 회사 공용폴더로만 저장됩니다.
+  - 외부 폰트/네트워크 요청 없음. 파일은 브라우저에서 바로 회사 공용폴더로만 저장됩니다.
+  - PDF 자동 입력은 저장소 안의 vendor/pdfjs (pdf.js)를 씁니다. PC에서 html을 더블클릭해 쓸 때도
+    vendor 폴더를 index.html 옆에 같이 두어야 합니다 (없으면 자동 입력만 안 되고 나머지는 그대로 동작).
+  - 자동 입력 규칙은 아래 <script>의 EXTRACT_RULES 에서 수정하세요.
   - 브라우저 저장소(localStorage 등)를 사용하지 않습니다. 탭을 닫으면 아무 정보도 남지 않습니다.
   - Chrome 또는 Edge에서 사용하세요.
   - 설정은 아래 <script> 맨 위 CONFIG / TYPES 에서 수정하세요.
@@ -171,6 +174,20 @@ tbody tr:hover{background:#fcfcfc}
   tr{border-bottom:1px solid var(--border)}
   td{border:none; padding:6px 12px}
 }
+/* ---------- PDF 자동 입력 ---------- */
+.xinfo{margin-top:12px; font-size:13px; border-radius:10px; padding:9px 12px; background:var(--brand-soft); color:var(--brand-dk)}
+.xinfo.warn{background:#fff7ec; color:#9a5b0b; border:1px solid #f3d3a6}
+.xtext{margin-top:10px; font-size:13px}
+.xtext summary{cursor:pointer; color:var(--muted); font-weight:600}
+.xtext pre{margin:8px 0 0; max-height:260px; overflow:auto; background:#fff; border:1px solid var(--border); border-radius:10px; padding:10px; font-size:12px; white-space:pre-wrap; word-break:break-all}
+.autobadge{display:inline-block; margin-left:6px; font-size:11px; font-weight:700; color:#9a5b0b; background:#fff1d6; border-radius:6px; padding:1px 6px; vertical-align:1px}
+.field input.auto,.field select.auto{background:#fff8e6; border-color:#f3c77a}
+.cands{display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; align-items:center}
+.cands .lbl{font-size:11.5px; color:var(--muted)}
+.cand{border:1px solid var(--border); background:#fff; border-radius:999px; padding:2px 9px; font-size:12px; cursor:pointer; font-family:ui-monospace,Consolas,monospace}
+.cand:hover{border-color:var(--brand)}
+.cand.on{background:var(--brand-soft); border-color:var(--brand); font-weight:700}
+.cand.amb{border-style:dashed}
 [hidden]{display:none !important}
 </style>
 </head>
@@ -236,6 +253,11 @@ tbody tr:hover{background:#fcfcfc}
         <div id="dropText">PDF 파일을 여기에 끌어다 놓거나 클릭해서 선택하세요</div>
       </div>
       <input type="file" id="fileInput" accept=".pdf,application/pdf" hidden>
+      <div class="xinfo" id="xInfo" hidden></div>
+      <details class="xtext" id="xTextBox" hidden>
+        <summary>PDF에서 읽은 텍스트 보기</summary>
+        <pre id="xText"></pre>
+      </details>
       <div class="preview">
         <div class="lbl">저장될 파일명</div>
         <div class="name" id="previewName"></div>
@@ -363,6 +385,98 @@ const TYPES = [
 ];
 
 /* =========================================================
+   PDF 자동 입력 규칙 — 업로드한 PDF 안의 글자를 읽어 빈 칸을 미리 채웁니다
+   (OCR 아님: 스캔 파일은 못 읽음. 자동 저장은 하지 않음)
+   - 키워드는 대소문자를 가리지 않고, 목록 앞에 있을수록 먼저 씁니다
+   - 키워드 줄에 값이 없으면 바로 아래 줄(표의 같은 열)에서 찾습니다
+   - 패턴(정규식) 칸은 문자열로 씁니다. 역슬래시는 두 번씩
+   ========================================================= */
+const EXTRACT_RULES = {
+  maxPages: 5,            // 앞에서 몇 페이지까지 읽을지
+  minChars: 30,           // 글자·숫자가 이보다 적으면 스캔 파일로 봄
+  nextLines: 2,           // 키워드 줄에 값이 없을 때 아래로 몇 줄까지 볼지
+
+  // 날짜 항목별 키워드
+  issueDate: ['Date of Issue','Issue Date','Issuing Date','Date of Issuance','Issued on','Issued Date','Date of Report','Report Date',
+              '발급일자','발급일','발행일자','발행일','시험일','Date'],
+  expiry:    ['Expiry Date','Expiration Date','Date of Expiry','Date of Expiration','Exp. Date','Expiry','Expiration',
+              'Valid until','Valid thru','Valid through','Validity','Best before','EXP','유효기간','유효기한','만료일','사용기한'],
+  // 위 날짜와 헷갈리는 다른 날짜 — 이 키워드 뒤의 날짜는 쓰지 않음
+  otherDate: ['Date of Manufacture','Manufacturing Date','Manufacture Date','Mfg. Date','MFG Date','Production Date',
+              'Date of Receipt','Receipt Date','Received Date','Date Received','Sample Received','Testing Period','Test Period',
+              'Revision Date','Date of Revision','Print Date','Original Issue Date','Initial Certification',
+              '제조일자','제조일','접수일자','접수일','개정일자','개정일'],
+
+  lot:     ['Lot No','Lot Number','Lot #','LOT#','Batch No','Batch Number','Batch #','Lot','Batch','제조번호','로트번호'],
+  invoice: ['Commercial Invoice No','Invoice No','Invoice Number','Invoice #','Number and date of invoices','Invoice'],
+
+  // 원산지증명서 특혜/비특혜. 둘 다 보이거나 아무것도 없으면 비워 둠
+  pref: {
+    yes:  ['\\bFTA\\b','(?<!non[-\\s]?)preferential','\\bForm\\s*["“]?\\s*(?:AK|E|AI|KV|AJ|D|A)\\b','\\bRCEP\\b','Korea[-\\s]?ASEAN',
+           'Free Trade Agreement','자유무역협정','(?<!비)특혜'],
+    no:   ['non[-\\s]?preferential','비특혜'],                          // 확실한 비특혜
+    noWeak: ['Chamber of Commerce','상공회의소','일반\\s*원산지'],       // 특혜 문구가 없을 때만 비특혜로
+  },
+
+  // 국가: 이 키워드 근처(아래 몇 줄)의 국가명을 먼저 씀. 채우는 값 = 코드
+  country: {
+    keywords: ['Country of destination','Importing country','Consignee','Destination','수입국','도착국'],
+    lines: 4,
+    exclude: ['KR'],      // 수출국(한국)은 후보에서 뺌
+    names: {
+      KZ:['Kazakhstan','카자흐스탄'], MN:['Mongolia','몽골'], MY:['Malaysia','말레이시아'], EC:['Ecuador','에콰도르'],
+      UZ:['Uzbekistan','우즈베키스탄'], KG:['Kyrgyzstan','Kyrgyz Republic','키르기스'], RU:['Russia','Russian Federation','러시아'],
+      VN:['Viet\\s*Nam','베트남'], TH:['Thailand','태국'], ID:['Indonesia','인도네시아'], PH:['Philippines','필리핀'],
+      SG:['Singapore','싱가포르'], KH:['Cambodia','캄보디아'], MM:['Myanmar','미얀마'], LA:['Lao','Laos','라오스'],
+      JP:['Japan','일본'], CN:['China','중국'], TW:['Taiwan','대만'], HK:['Hong\\s*Kong','홍콩'], MO:['Macau','Macao','마카오'],
+      US:['United States','U\\.S\\.A\\.?','USA','미국'], CA:['Canada','캐나다'], MX:['Mexico','멕시코'],
+      PE:['Peru','페루'], CL:['Chile','칠레'], CO:['Colombia','콜롬비아'], BR:['Brazil','브라질'],
+      AU:['Australia','호주'], NZ:['New Zealand','뉴질랜드'], IN:['India','인도'],
+      AE:['United Arab Emirates','U\\.A\\.E\\.?','UAE','아랍에미리트'], SA:['Saudi Arabia','사우디'],
+      GB:['United Kingdom','U\\.K\\.','영국'], DE:['Germany','독일'], FR:['France','프랑스'],
+      KR:['Korea','대한민국','한국'],
+    },
+  },
+
+  // 성적서 발급기관 → 약칭 (위에서부터가 아니라 문서에 먼저 나온 기관 순)
+  agency: [
+    {abbr:'KTR',    patterns:['\\bKTR\\b','Korea Testing\\s*(?:&|and)\\s*Research','한국화학융합시험연구원']},
+    {abbr:'KCL',    patterns:['\\bKCL\\b','Korea Conformity Laborator','한국건설생활환경시험연구원']},
+    {abbr:'KTL',    patterns:['\\bKTL\\b','Korea Testing Laboratory','한국산업기술시험원']},
+    {abbr:'FITI',   patterns:['\\bFITI\\b','한국의류시험연구원']},
+    {abbr:'KOTITI', patterns:['\\bKOTITI\\b','코티티']},
+    {abbr:'SGS',    patterns:['\\bSGS\\b']},
+    {abbr:'Intertek', patterns:['\\bIntertek\\b']},
+    {abbr:'BV',     patterns:['Bureau\\s*Veritas','\\bBVCPS\\b']},
+    {abbr:'TUV',    patterns:['\\bT[ÜU]V\\b']},
+    {abbr:'UL',     patterns:['Underwriters Laboratories','\\bUL\\s+(?:LLC|Solutions|International|Korea|Verification)']},
+  ],
+
+  // 판정연령 → '3+' 형태. 키워드 근처를 먼저, 없으면 문서 전체에서 'Ages 3+' 같은 문구
+  age: {
+    keywords: ['Age Grade','Age Grading','Age Group','Age Range','Recommended Age','사용연령','판정연령','대상연령'],
+    patterns: ['\\bAges?\\s*(\\d{1,2})\\s*\\+','\\b(\\d{1,2})\\s*\\+\\s*(?:years?|yrs)','\\b(\\d{1,2})\\s*(?:years?|yrs)\\s*(?:of age\\s*)?(?:and|&)\\s*(?:up|over|older|above)',
+               '만\\s*(\\d{1,2})\\s*세\\s*이상','(\\d{1,2})\\s*세\\s*이상'],
+  },
+
+  // 5번 서류유형: 문서 앞쪽(제목)에 먼저 나온 것
+  docType5: [
+    {value:'MSDS',  patterns:['Material\\s*Safety\\s*Data\\s*Sheet','\\bMSDS\\b','물질안전보건자료']},
+    {value:'SDS',   patterns:['(?<!Material\\s*)Safety\\s*Data\\s*Sheet','\\bSDS\\b']},
+    {value:'HACCP', patterns:['\\bHACCP\\b','안전관리인증']},
+    {value:'GMP',   patterns:['(?<!C)\\bGMP\\b','Good\\s*Manufacturing\\s*Practice']},
+  ],
+  // 9번 ISO: 'ISO 9001' → 'ISO9001'
+  iso: ['9001','14001','22716','13485','45001','22000','27001','50001','17025'],
+
+  // 제품코드: 사내 코드 형식이 정해지면 여기를 바꾸세요. autofill:false면 후보 칩만 보여 줌
+  product: {pattern:'\\b88\\d{11}\\b', autofill:false},
+
+  months: {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12},
+};
+// 제조 업체코드·수출(바이어) 업체코드는 사내 코드라 PDF에서 찾지 않음
+
+/* =========================================================
    상태 (메모리에만 존재 — 탭을 닫으면 사라짐)
    ========================================================= */
 let root = null;        // 공용폴더 핸들
@@ -464,9 +578,13 @@ function openForm(id){
     else if (p.kind === 'select') input = `<select id="${id}"><option value="">선택하세요</option>${p.options.map(o=>`<option>${esc(o)}</option>`).join('')}</select>`;
     else if (p.kind === 'date')   input = `<input id="${id}" type="date">`;
     else                          input = `<input id="${id}" value="${esc(p.value||'')}" placeholder="${esc(p.ph||'')}" autocomplete="off">`;
-    return `<div class="field"><label for="${id}">${esc(p.label)}${opt}</label>${input}</div>`;
+    return `<div class="field"><label for="${id}">${esc(p.label)}${opt}<span class="autobadge" id="badge_${i}" hidden>자동 입력 · 확인 필요</span></label>${input}
+      <div class="cands" id="cand_${i}" hidden></div></div>`;
   }).join('');
-  $('#formFields').querySelectorAll('input,select').forEach(el => { el.oninput = updatePreview; el.onchange = updatePreview; });
+  $('#formFields').querySelectorAll('input,select').forEach(el => {
+    const i = +el.id.split('_')[1];
+    el.oninput = el.onchange = () => { userEdited(i); updatePreview(); };   // 코드로 넣은 값은 이벤트가 안 생김
+  });
   resetForm();
   show('#viewForm');
   const first = $('#formFields').querySelector('input:not([readonly]),select'); if (first) first.focus();
@@ -510,12 +628,15 @@ function updateSave(){
 function setFile(file){
   if (!file) return;
   if (!/\.pdf$/i.test(file.name)){ toast('PDF 파일만 올릴 수 있어요'); return; }
+  clearPdfState(true);   // 이전 파일에서 자동으로 채운 값(손대지 않은 것)은 지운다
   curFile = file;
   $('#drop').classList.add('has');
   $('#dropText').innerHTML = `📄 <b>${esc(file.name)}</b> <span class="muted">(${fmtSize(file.size)})</span><br><span class="muted" style="font-size:13px">다른 파일로 바꾸려면 클릭</span>`;
   updateSave();
+  extractFromFile(file);
 }
 function resetForm(){
+  clearPdfState(false);
   curFile = null;
   $('#fileInput').value = '';
   $('#drop').classList.remove('has');
@@ -523,6 +644,7 @@ function resetForm(){
   if (curType) $('#formFields').querySelectorAll('input:not([readonly]),select').forEach(el => {
     const p = curType.parts[+el.id.split('_')[1]];
     el.value = (p.kind === 'text' && p.value) ? p.value : '';
+    delete el.dataset.touched;
   });
   updatePreview();
 }
@@ -549,6 +671,350 @@ async function save(){
   }finally{
     btn.textContent = '공용폴더에 저장'; updateSave();
   }
+}
+
+/* ---------- PDF 자동 입력 ----------
+   pdf.js(vendor/pdfjs, 3.x legacy UMD)를 PDF를 처음 올릴 때 <script>로 불러온다.
+   워커 파일도 <script>로 불러와서 워커 없이 메인 스레드에서 돈다 → file://로 열어도 동작.
+   한글·중국어 글꼴용 cMap도 vendor/pdfjs/cmaps/*.js를 필요할 때 <script>로 불러온다 (fetch 안 씀).
+   외부 네트워크 요청 없음. 읽은 글자는 메모리에만 두고 입력 초기화·파일 교체·홈 이동 때 지운다.
+   한계: 글꼴에 글자 정보(ToUnicode)도 없고 표준 cMap에도 없는 PDF는 한글이 깨질 수 있다 (영문·숫자는 대부분 괜찮음). */
+const PDFJS_DIR = 'vendor/pdfjs/';
+let pdfjsReady = null;
+function loadScript(src){
+  return new Promise((ok, no) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = () => { s.remove(); ok(); }; s.onerror = () => { s.remove(); no(new Error('파일을 불러오지 못함: ' + src)); };
+    document.head.appendChild(s);
+  });
+}
+function loadPdfJs(){
+  if (!pdfjsReady) pdfjsReady = (async () => {
+    await loadScript(PDFJS_DIR + 'pdf.worker.min.js');   // window.pdfjsWorker → 메인 스레드에서 처리
+    await loadScript(PDFJS_DIR + 'pdf.min.js');          // window.pdfjsLib
+    if (!window.pdfjsLib || !window.pdfjsWorker) throw new Error('pdf.js를 불러오지 못함');
+  })().catch(e => { pdfjsReady = null; throw e; });
+  return pdfjsReady;
+}
+const cmapCache = {}, cmapWaiters = {};
+window.__pdfjsCMap = (name, b64) => {
+  cmapCache[name] = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  (cmapWaiters[name] || []).forEach(w => w.ok(cmapCache[name])); delete cmapWaiters[name];
+};
+class ScriptCMapReaderFactory {
+  fetch({name}){
+    const done = data => ({cMapData: data, compressionType: 1});   // 1 = BINARY (.bcmap)
+    if (cmapCache[name]) return Promise.resolve(done(cmapCache[name]));
+    if (!/^[\w.-]+$/.test(name)) return Promise.reject(new Error('cMap 이름이 이상함: ' + name));
+    return new Promise((ok, no) => {
+      const first = !cmapWaiters[name];
+      (cmapWaiters[name] ||= []).push({ok: d => ok(done(d)), no});
+      if (!first) return;
+      loadScript(`${PDFJS_DIR}cmaps/${name}.js`).then(() => {
+        if (cmapWaiters[name]){ cmapWaiters[name].forEach(w => w.no(new Error('cMap 없음: ' + name))); delete cmapWaiters[name]; }
+      }, e => { (cmapWaiters[name] || []).forEach(w => w.no(e)); delete cmapWaiters[name]; });
+    });
+  }
+}
+
+/* PDF 앞쪽 몇 페이지의 글자를 줄 단위로 읽는다. 줄 = {text, page, spans:[{start, x}]} */
+async function readPdfLines(file){
+  await loadPdfJs();
+  const task = window.pdfjsLib.getDocument({
+    data: new Uint8Array(await file.arrayBuffer()),
+    CMapReaderFactory: ScriptCMapReaderFactory, cMapPacked: true, useWorkerFetch: false,
+    isEvalSupported: false, disableFontFace: true, useSystemFonts: false, verbosity: 0,
+  });
+  try{
+    const pdf = await task.promise, lines = [];
+    for (let p = 1; p <= Math.min(pdf.numPages, EXTRACT_RULES.maxPages); p++){
+      const page = await pdf.getPage(p);
+      lines.push(...groupLines((await page.getTextContent()).items, p));
+      page.cleanup();
+    }
+    return lines;
+  } finally { task.destroy(); }
+}
+function groupLines(items, page){
+  const parts = items.filter(it => it.str && it.str.trim()).map(it => ({
+    s: it.str.replace(/\s+/g, ' '), x: it.transform[4], y: it.transform[5],
+    w: it.width || 0, h: Math.abs(it.height || it.transform[3]) || 8,
+  }));
+  parts.sort((a,b) => b.y - a.y || a.x - b.x);
+  const rows = [];
+  for (const p of parts){
+    const row = rows.find(r => Math.abs(r.y - p.y) <= Math.max(2, Math.min(r.h, p.h) * 0.5));
+    if (row) row.items.push(p); else rows.push({y:p.y, h:p.h, items:[p]});
+  }
+  rows.sort((a,b) => b.y - a.y);
+  return rows.map(r => {
+    r.items.sort((a,b) => a.x - b.x);
+    let text = '', end = null; const spans = [];
+    for (const it of r.items){
+      if (text && (end === null || it.x - end > it.h * 0.2) && !text.endsWith(' ')) text += ' ';
+      spans.push({start:text.length, x:it.x}); text += it.s; end = it.x + it.w;
+    }
+    return {text: text.trim(), page, spans};
+  });
+}
+const xAt = (line, i) => { let x = line.spans[0]?.x ?? 0; for (const s of line.spans){ if (s.start <= i) x = s.x; else break; } return x; };
+/* 키워드 바로 아래 줄에서는 키워드와 같은 열(가로 위치)의 글자만 본다 */
+function sliceX(line, x0, x1){
+  return line.spans.map((s,k) => ({x:s.x, t: line.text.slice(s.start, line.spans[k+1]?.start ?? undefined)}))
+    .filter(s => s.x >= x0 && s.x <= x1).map(s => s.t.trim()).join(' ');
+}
+
+/* 날짜 찾기 → [{start, end, value:'YYYY-MM-DD', ambiguous, alts}] */
+const MON = '(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+const DATE_RES = [
+  {re:/\b((?:19|20)\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})(?!\d)/g, ymd:m => [m[1], m[2], m[3]]},
+  {re:/((?:19|20)\d{2})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일/g, ymd:m => [m[1], m[2], m[3]]},
+  {re:new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?[\\s\\-./,]*${MON}\\.?[\\s\\-./,]*((?:19|20)\\d{2})\\b`, 'gi'), ymd:m => [m[3], monthNo(m[2]), m[1]]},
+  {re:new RegExp(`\\b${MON}\\.?\\s*(\\d{1,2})(?:st|nd|rd|th)?\\s*,?\\s*((?:19|20)\\d{2})\\b`, 'gi'), ymd:m => [m[3], monthNo(m[1]), m[2]]},
+  {re:/(?<![\d.\/-])(\d{1,2})\s*[./-]\s*(\d{1,2})\s*[./-]\s*((?:19|20)\d{2})\b/g, amb:true},
+];
+function monthNo(s){ s = s.toLowerCase(); return EXTRACT_RULES.months[s.slice(0,4)] || EXTRACT_RULES.months[s.slice(0,3)]; }
+function isoDate(y, m, d){
+  y = +y; m = +m; d = +d;
+  if (!m || m > 12 || !d || d > 31) return null;
+  const t = new Date(y, m - 1, d);
+  if (t.getMonth() !== m - 1) return null;
+  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+function findDates(text){
+  const out = [];
+  for (const r of DATE_RES){
+    r.re.lastIndex = 0;
+    for (const m of text.matchAll(r.re)){
+      const start = m.index, end = start + m[0].length;
+      if (out.some(o => start < o.end && end > o.start)) continue;   // 앞 형식이 이미 잡은 자리
+      if (r.amb){   // 30/10/2026: 일/월 순서가 애매 → 후보로만
+        const alts = [...new Set([isoDate(m[3], m[2], m[1]), isoDate(m[3], m[1], m[2])].filter(Boolean))];
+        if (alts.length) out.push({start, end, value:alts[0], ambiguous:true, alts, src:m[0]});
+      } else {
+        const v = isoDate(...r.ymd(m));
+        if (v) out.push({start, end, value:v, src:m[0]});
+      }
+    }
+  }
+  return out.sort((a,b) => a.start - b.start);
+}
+/* LOT·인보이스 번호: 숫자가 들어간 첫 영숫자 덩어리 */
+function findTokens(text, minLen){
+  const out = [];
+  for (const m of text.matchAll(/[A-Za-z0-9][A-Za-z0-9\-\/.]*[A-Za-z0-9]|[A-Za-z0-9]/g)){
+    const t = m[0];
+    if (!/\d/.test(t) || t.length < minLen || t.length > 30) continue;
+    if (findDates(t).length) continue;
+    out.push({start:m.index, end:m.index + t.length, value:t, src:t});
+  }
+  return out;
+}
+
+/* 키워드 찾기: 모든 키워드를 한꺼번에 찾고, 겹치면 긴 키워드가 이김 (예: 'Exp. Date'가 'Date'를 이김) */
+const kwRe = k => {
+  const body = k.trim().split(/\s+/).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\./g, '\\.?')).join('[\\s:]*');
+  const latin = /^[A-Za-z]/.test(k);
+  return new RegExp((latin ? '(?<![A-Za-z])' : '') + body + (/[A-Za-z]$/.test(k) ? '(?![a-z])' : ''), 'gi');
+};
+const KW_GROUPS = () => ({
+  issueDate: EXTRACT_RULES.issueDate, expiry: EXTRACT_RULES.expiry, otherDate: EXTRACT_RULES.otherDate,
+  lot: EXTRACT_RULES.lot, invoice: EXTRACT_RULES.invoice, country: EXTRACT_RULES.country.keywords, age: EXTRACT_RULES.age.keywords,
+});
+function keywordHits(lines){
+  const groups = Object.entries(KW_GROUPS()).flatMap(([g, list]) => list.map((k, rank) => ({g, rank, re:kwRe(k)})));
+  return lines.map(line => {
+    const all = [];
+    for (const {g, rank, re} of groups) for (const m of line.text.matchAll(re)) all.push({g, rank, start:m.index, end:m.index + m[0].length});
+    all.sort((a,b) => (b.end - b.start) - (a.end - a.start));
+    const kept = [];
+    for (const h of all) if (!kept.some(k => h.start < k.end && h.end > k.start)) kept.push(h);
+    return kept.sort((a,b) => a.start - b.start);
+  });
+}
+/* 키워드 뒤에 가장 가까운 값: 같은 줄(다음 키워드 전까지) → 없으면 아래 줄의 같은 열 */
+function keyed(ctx, group, finder){
+  const cands = [];
+  ctx.lines.forEach((line, li) => {
+    ctx.hits[li].forEach((h, hi) => {
+      if (h.g !== group) return;
+      const next = ctx.hits[li][hi + 1];
+      let v = finder(line.text.slice(h.end, next ? next.start : undefined))[0];
+      if (!v){
+        const kx = xAt(line, h.start);
+        for (let j = 1; j <= EXTRACT_RULES.nextLines && !v; j++){
+          const below = ctx.lines[li + j];
+          if (!below || below.page !== line.page) break;
+          v = finder(sliceX(below, kx - 40, kx + 220))[0];
+        }
+      }
+      if (v) cands.push({...v, rank:h.rank, pos:li, kw:line.text.slice(h.start, h.end)});
+    });
+  });
+  return cands.sort((a,b) => a.rank - b.rank || a.pos - b.pos);
+}
+function dateField(ctx, group){
+  const out = [];
+  for (const c of keyed(ctx, group, findDates)){
+    if (c.ambiguous) c.alts.forEach(v => out.push({value:v, src:c.src, kw:c.kw, ambiguous:true}));
+    else out.push({value:c.value, src:c.src, kw:c.kw, auto:true});
+  }
+  if (!out.length){   // 키워드가 없으면 문서의 날짜를 후보로만
+    for (const d of findDates(ctx.text)) (d.alts || [d.value]).forEach(v => out.push({value:v, src:d.src, ambiguous:!!d.ambiguous}));
+  }
+  return out;
+}
+const anyRe = (list, flags='i') => new RegExp(list.join('|'), flags);
+const firstIndex = (text, list) => { let best = -1; for (const p of list){ const m = new RegExp(p, 'i').exec(text); if (m && (best < 0 || m.index < best)) best = m.index; } return best; };
+const EXTRACTORS = {
+  issueDate: ctx => dateField(ctx, 'issueDate'),
+  expiry:    ctx => dateField(ctx, 'expiry'),
+  lot:       ctx => keyed(ctx, 'lot', t => findTokens(t, 2)).map(c => ({value:c.value, src:c.src, kw:c.kw, auto:true})),
+  invoice:   ctx => keyed(ctx, 'invoice', t => findTokens(t, 3)).map(c => ({value:c.value, src:c.src, kw:c.kw, auto:true})),
+  pref: ctx => {
+    const R = EXTRACT_RULES.pref, t = ctx.text;
+    const yes = anyRe(R.yes).exec(t), no = anyRe(R.no).exec(t), weak = anyRe(R.noWeak).exec(t);
+    if (yes && !no) return [{value:'특혜', src:yes[0], auto:true}];
+    if (no && !yes) return [{value:'비특혜', src:no[0], auto:true}];
+    if (!yes && !no && weak) return [{value:'비특혜', src:weak[0], auto:true}];
+    return [];
+  },
+  country: ctx => {
+    const R = EXTRACT_RULES.country, out = [];
+    const codes = Object.entries(R.names).filter(([c]) => !R.exclude.includes(c));
+    const scan = (text, auto, kw) => {
+      const found = [];
+      for (const [code, names] of codes){
+        const m = new RegExp(names.map(n => /^[A-Za-z]/.test(n) ? `\\b${n}\\b` : n).join('|'), 'i').exec(text);
+        if (m) found.push({value:code, src:m[0], kw, auto, at:m.index});
+      }
+      return found.sort((a,b) => a.at - b.at);
+    };
+    ctx.lines.forEach((line, li) => ctx.hits[li].forEach(h => {
+      if (h.g !== 'country') return;
+      const kx = xAt(line, h.start);
+      let text = line.text.slice(h.end);
+      for (let j = 1; j <= R.lines; j++){ const b = ctx.lines[li + j]; if (!b || b.page !== line.page) break; text += '\n' + sliceX(b, kx - 40, kx + 260); }
+      out.push(...scan(text, true, line.text.slice(h.start, h.end)));
+    }));
+    out.push(...scan(ctx.text, false));   // 키워드 없이 문서에 나온 국가는 후보로만
+    return out;
+  },
+  agency: ctx => EXTRACT_RULES.agency.map(a => ({value:a.abbr, at:firstIndex(ctx.text, a.patterns), auto:true}))
+    .filter(a => a.at >= 0).sort((a,b) => a.at - b.at).map(a => ({...a, src:ctx.text.slice(a.at, a.at + 40)})),
+  age: ctx => {
+    const R = EXTRACT_RULES.age, out = [];
+    const short = m => {   // '36 months' → '3+', '18 months' → '18M+'
+      const n = +m[1], months = /month|개월/i.test(m[0]);
+      return months ? (n % 12 ? `${n}M+` : `${n / 12}+`) : `${n}+`;
+    };
+    const near = /(\d{1,3})\s*(?:\+|years?|yrs|months?|세|개월)/i;
+    ctx.lines.forEach((line, li) => ctx.hits[li].forEach(h => {
+      if (h.g !== 'age') return;
+      const tail = [line.text.slice(h.end), ctx.lines[li + 1]?.text || ''].join(' ');
+      const m = near.exec(tail); if (m) out.push({value:short(m), src:m[0], kw:line.text.slice(h.start, h.end), auto:true});
+    }));
+    for (const p of R.patterns){ const m = new RegExp(p, 'i').exec(ctx.text); if (m) out.push({value:short(m), src:m[0], auto:true}); }
+    return out;
+  },
+  product: ctx => {
+    const P = EXTRACT_RULES.product;
+    return [...ctx.text.matchAll(new RegExp(P.pattern, 'g'))].map(m => ({value:m[0], src:m[0], auto:!!P.autofill}));
+  },
+  docType: (ctx, type) => {
+    if (type.id === 5) return EXTRACT_RULES.docType5.map(d => ({value:d.value, at:firstIndex(ctx.text, d.patterns), auto:true}))
+      .filter(d => d.at >= 0).sort((a,b) => a.at - b.at).map(d => ({...d, src:ctx.text.slice(d.at, d.at + 40)}));
+    if (type.id === 9){
+      const re = new RegExp(`ISO\\s*[:\\-]?\\s*(${EXTRACT_RULES.iso.join('|')})\\b`, 'gi');
+      return [...ctx.text.matchAll(re)].map(m => ({value:'ISO' + m[1], src:m[0], auto:true}));
+    }
+    return [];
+  },
+};
+
+/* 화면에 반영 */
+let extractToken = 0;
+function fieldEl(i){ return $(`#fld_${i}`); }
+function defaultOf(p){ return p.kind === 'text' && p.value ? p.value : ''; }
+function setAutoMark(i, on){
+  const el = fieldEl(i); if (!el) return;
+  el.classList.toggle('auto', on);
+  if (on) el.dataset.auto = '1'; else delete el.dataset.auto;
+  const b = $(`#badge_${i}`); if (b) b.hidden = !on;
+}
+/* 사용자가 직접 고치면 자동 입력 표시를 없앤다 (파일을 바꿔도 지우지 않음) */
+function userEdited(i){
+  const el = fieldEl(i); if (!el) return;
+  delete el.dataset.pdf; el.dataset.touched = '1'; setAutoMark(i, false); markCands(i);
+}
+function clearPdfState(clearValues){
+  extractToken++;
+  if (!curType) return;
+  curType.parts.forEach((p, i) => {
+    const el = fieldEl(i); if (!el || p.kind === 'fixed') return;
+    if (clearValues && el.dataset.pdf) el.value = defaultOf(p);
+    delete el.dataset.pdf; setAutoMark(i, false);
+    const c = $(`#cand_${i}`); if (c){ c.innerHTML = ''; c.hidden = true; }
+  });
+  $('#xInfo').hidden = true; $('#xInfo').textContent = '';
+  $('#xTextBox').hidden = true; $('#xTextBox').open = false; $('#xText').textContent = '';
+}
+function xInfo(msg, warn){ const x = $('#xInfo'); x.hidden = false; x.textContent = msg; x.classList.toggle('warn', !!warn); }
+async function extractFromFile(file){
+  const my = ++extractToken, type = curType;
+  xInfo('PDF에서 글자를 읽는 중…');
+  let lines;
+  try { lines = await readPdfLines(file); }
+  catch(e){
+    if (my !== extractToken) return;
+    console.warn('PDF 읽기 실패', e);
+    xInfo(e.name === 'PasswordException' ? '비밀번호가 걸린 PDF라 자동 입력을 못 했어요. 직접 입력해 주세요.'
+      : /불러오지 못함/.test(e.message) ? '자동 입력 기능 파일(vendor 폴더)을 찾지 못해 자동 입력을 못 했어요. 직접 입력해 주세요.'
+      : 'PDF를 읽지 못해 자동 입력을 못 했어요. 직접 입력해 주세요.', true);
+    return;
+  }
+  if (my !== extractToken || curFile !== file || curType !== type) return;
+  const text = lines.map(l => l.text).join('\n');
+  $('#xText').textContent = text || '(글자 없음)'; $('#xTextBox').hidden = false;
+  if ((text.match(/[\p{L}\p{N}]/gu) || []).length < EXTRACT_RULES.minChars){
+    xInfo('글자 정보가 없는 스캔 파일이라 자동 입력을 못 했어요. 직접 입력해 주세요.', true);
+    return;
+  }
+  const ctx = {lines, text, hits: keywordHits(lines)};
+  let filled = 0, suggested = 0;
+  type.parts.forEach((p, i) => {
+    const ex = EXTRACTORS[p.key], el = fieldEl(i);
+    if (!ex || !el || p.kind === 'fixed') return;
+    let cands = [];
+    try { cands = ex(ctx, type) || []; } catch(e){ console.warn('자동 입력 규칙 오류', p.key, e); }
+    if (p.kind === 'select') cands = cands.filter(c => p.options.includes(c.value));
+    const seen = new Set();
+    cands = cands.filter(c => !seen.has(c.value) && seen.add(c.value)).slice(0, 8);
+    if (!cands.length) return;
+    const pick = cands.find(c => c.auto);
+    if (pick && cands[0] === pick && (el.value === '' || (el.value === defaultOf(p) && !el.dataset.touched))){
+      el.value = pick.value; el.dataset.pdf = '1'; setAutoMark(i, true); filled++;
+    } else suggested++;
+    renderCands(i, cands);
+  });
+  updatePreview();
+  xInfo(filled ? `PDF에서 ${filled}칸을 자동으로 채웠어요. 노란 칸이 맞는지 꼭 확인해 주세요.` + (suggested ? ' 칸 아래 후보도 눌러서 고를 수 있어요.' : '')
+    : suggested ? '자동으로 채울 만한 값은 없고, 칸 아래에 후보만 보여 드려요.' : 'PDF에서 채울 값을 찾지 못했어요. 직접 입력해 주세요.');
+}
+function renderCands(i, cands){
+  const box = $(`#cand_${i}`); if (!box) return;
+  box.hidden = false;
+  box.innerHTML = `<span class="lbl">PDF 후보</span>` + cands.map((c, k) =>
+    `<button type="button" class="cand${c.ambiguous ? ' amb' : ''}" data-k="${k}" title="${esc((c.kw ? c.kw + ' → ' : '') + (c.src || c.value) + (c.ambiguous ? ' (일/월 순서 확인 필요)' : ''))}">${esc(c.value)}${c.ambiguous ? ' ?' : ''}</button>`).join('');
+  box.querySelectorAll('.cand').forEach(b => b.onclick = () => {
+    const el = fieldEl(i); el.value = cands[+b.dataset.k].value;
+    el.dataset.pdf = '1'; setAutoMark(i, false); markCands(i); updatePreview();
+  });
+  markCands(i);
+}
+function markCands(i){
+  const el = fieldEl(i), box = $(`#cand_${i}`); if (!el || !box) return;
+  box.querySelectorAll('.cand').forEach(b => b.classList.toggle('on', b.textContent.replace(/ \?$/, '') === el.value));
 }
 
 /* ---------- 찾기 ---------- */
