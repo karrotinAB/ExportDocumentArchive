@@ -179,6 +179,7 @@ tbody tr:hover{background:#fcfcfc}
   tr{border-bottom:1px solid var(--border)}
   td{border:none; padding:6px 12px}
 }
+
 /* ---------- PDF 자동 입력 ---------- */
 .xinfo{margin-top:12px; font-size:13px; border-radius:10px; padding:9px 12px; background:var(--brand-soft); color:var(--brand-dk)}
 .xinfo.warn{background:#fff7ec; color:#9a5b0b; border:1px solid #f3d3a6}
@@ -193,6 +194,15 @@ tbody tr:hover{background:#fcfcfc}
 .cand:hover{border-color:var(--brand)}
 .cand.on{background:var(--brand-soft); border-color:var(--brand); font-weight:700}
 .cand.amb{border-style:dashed}
+/* ---------- 추가 제품코드 ---------- */
+.extras{display:flex; flex-direction:column; gap:6px; margin-top:6px}
+.extras .xrow{display:flex; gap:6px; align-items:center}
+.extras .xrow input{flex:1}
+.extras .xdel{border:none; background:none; color:var(--muted); cursor:pointer; font-size:16px; padding:0 4px}
+.extras .xdel:hover{color:var(--red)}
+.addextra{margin-top:7px}
+.incl{display:block; font-size:11.5px; color:var(--muted); margin-top:3px; word-break:break-all}
+.incl b{color:var(--brand-dk)}
 [hidden]{display:none !important}
 </style>
 </head>
@@ -267,6 +277,7 @@ tbody tr:hover{background:#fcfcfc}
         <div class="lbl">저장될 파일명</div>
         <div class="name" id="previewName"></div>
         <div class="path" id="previewPath"></div>
+        <div class="path" id="previewExtra" hidden></div>
       </div>
       <div class="actions">
         <button class="btn" id="btnReset">입력 초기화</button>
@@ -281,6 +292,7 @@ tbody tr:hover{background:#fcfcfc}
       <div class="check">✓</div>
       <h2>저장했어요</h2>
       <code id="donePath"></code>
+      <p class="muted" id="doneExtra" hidden style="font-size:13px; margin:0 0 6px"></p>
       <div class="actions" style="justify-content:center">
         <button class="btn" id="btnCopyDone">경로 복사</button>
         <button class="btn" id="btnSameType">같은 유형 계속 올리기</button>
@@ -326,6 +338,9 @@ const CONFIG = {
   // "공용폴더 연결"에서 선택할 폴더의 실제 네트워크 경로 (경로 복사에 사용)
   // 역슬래시는 두 번씩 써야 해요
   BASE_UNC: '\\\\192.168.250.30\\수출서류아카이빙',
+  // 추가 제품코드(파일명에 안 들어가는 코드)를 적어 두는 폴더. 공용폴더 안에 PDF마다 작은 txt로 저장
+  // 예: _추가제품코드\09_ISO\M01_111_ISO9001_20270101.pdf.txt  (PDF 이름을 바꾸면 연결이 끊어지니 같이 바꿔야 함)
+  EXTRA_DIR: '_추가제품코드',
 };
 
 /* 입력 항목 정의 */
@@ -336,7 +351,7 @@ const FIELDS = {
   invoice:   {label:'관련 인보이스 넘버', kind:'text', ph:'예: INV26-0012'},
   issueDate: {label:'발급일자', kind:'date'},
   maker:     {label:'제조 업체코드', kind:'text', ph:'예: M0123'},
-  product:   {label:'제품코드', kind:'text', ph:'예: 8801234567890'},
+  product:   {label:'대표 제품코드', kind:'text', ph:'예: 8801234567890'},
   agency:    {label:'성적서 발급기관 약칭', kind:'text', ph:'예: KTR'},
   age:       {label:'판정연령', kind:'text', optional:true, ph:'예: 3+  (해당 없으면 비워두세요)'},
   lot:       {label:'LOT / BATCH 번호', kind:'text', ph:'예: L240915'},
@@ -586,9 +601,12 @@ function openForm(id){
     else if (p.kind === 'select') input = `<select id="${id}"><option value="">선택하세요</option>${p.options.map(o=>`<option>${esc(o)}</option>`).join('')}</select>`;
     else if (p.kind === 'date')   input = `<input id="${id}" type="date">`;
     else                          input = `<input id="${id}" value="${esc(p.value||'')}" placeholder="${esc(p.ph||'')}" autocomplete="off">`;
+    const extra = p.key === 'product' ? `<div class="extras" id="extras"></div>
+      <button type="button" class="textbtn addextra" id="addExtra">+ 제품코드 추가 <span class="muted" style="font-weight:500">(파일명에는 안 들어가고 검색에 쓰여요)</span></button>` : '';
     return `<div class="field"><label for="${id}">${esc(p.label)}${opt}<span class="autobadge" id="badge_${i}" hidden>자동 입력 · 확인 필요</span></label>${input}
-      <div class="cands" id="cand_${i}" hidden></div></div>`;
+      <div class="cands" id="cand_${i}" hidden></div>${extra}</div>`;
   }).join('');
+  if ($('#addExtra')) $('#addExtra').onclick = () => addExtraRow('', true);
   $('#formFields').querySelectorAll('input,select').forEach(el => {
     const i = +el.id.split('_')[1];
     el.oninput = el.onchange = () => { userEdited(i); updatePreview(); };   // 코드로 넣은 값은 이벤트가 안 생김
@@ -627,6 +645,9 @@ function updatePreview(){
     return p.optional ? null : `<span class="ph">[${esc(p.label)}]</span>`;
   }).filter(Boolean).join('_') + '.pdf';
   $('#previewPath').textContent = '저장 위치: ' + joinPath(CONFIG.BASE_UNC, curType.folder, buildName().name);
+  const ex = extraCodes();
+  $('#previewExtra').hidden = !ex.length;
+  $('#previewExtra').textContent = `추가 제품코드 ${ex.length}개 (검색에만 쓰임): ${ex.join(', ')}`;
   updateSave();
 }
 function updateSave(){
@@ -649,7 +670,8 @@ function resetForm(){
   $('#fileInput').value = '';
   $('#drop').classList.remove('has');
   $('#dropText').textContent = 'PDF 파일을 여기에 끌어다 놓거나 클릭해서 선택하세요';
-  if (curType) $('#formFields').querySelectorAll('input:not([readonly]),select').forEach(el => {
+  if ($('#extras')) $('#extras').innerHTML = '';
+  if (curType) $('#formFields').querySelectorAll('[id^="fld_"]:not([readonly])').forEach(el => {
     const p = curType.parts[+el.id.split('_')[1]];
     el.value = (p.kind === 'text' && p.value) ? p.value : '';
     delete el.dataset.touched;
@@ -672,6 +694,11 @@ async function save(){
     await w.write(curFile); await w.close();
     lastSavedPath = joinPath(CONFIG.BASE_UNC, curType.folder, name);
     $('#donePath').textContent = lastSavedPath;
+    const ex = extraCodes();
+    let extraMsg = '';
+    try { await saveExtraCodes(curType.folder, name, ex); if (ex.length) extraMsg = `추가 제품코드 ${ex.length}개도 함께 저장했어요: ${ex.join(', ')}`; }
+    catch(e){ extraMsg = `⚠ PDF는 저장했지만 추가 제품코드를 저장하지 못했어요 (${e.message}). 다시 저장해 주세요.`; }
+    $('#doneExtra').hidden = !extraMsg; $('#doneExtra').textContent = extraMsg;
     resetForm();
     show('#viewDone');
   }catch(e){
@@ -680,6 +707,48 @@ async function save(){
     btn.textContent = '공용폴더에 저장'; updateSave();
   }
 }
+
+/* ---------- 추가 제품코드 ----------
+   대표 제품코드만 파일명에 들어가고, 나머지 코드는 공용폴더의 CONFIG.EXTRA_DIR 아래에
+   PDF마다 '{PDF 이름}.txt'(한 줄에 코드 하나)로 저장한다. 검색할 때 같이 읽는다. */
+function addExtraRow(value, focus){
+  const row = document.createElement('div'); row.className = 'xrow';
+  row.innerHTML = `<input class="extra" placeholder="추가 제품코드" autocomplete="off"><button type="button" class="xdel" title="빼기">✕</button>`;
+  const inp = row.querySelector('input'); inp.value = value;
+  inp.oninput = updatePreview;
+  inp.onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); addExtraRow('', true); } };
+  inp.onpaste = e => {   // 엑셀에서 여러 줄을 붙여넣으면 줄마다 칸을 만든다
+    const codes = splitCodes(e.clipboardData.getData('text'));
+    if (codes.length < 2) return;
+    e.preventDefault(); inp.value = codes[0]; codes.slice(1).forEach(c => addExtraRow(c)); updatePreview();
+  };
+  row.querySelector('.xdel').onclick = () => { row.remove(); updatePreview(); };
+  $('#extras').appendChild(row);
+  if (focus) inp.focus();
+}
+function extraCodes(){
+  if (!$('#extras')) return [];
+  const pi = curType ? curType.parts.findIndex(p => p.key === 'product') : -1;
+  const main = pi >= 0 ? valueOf(curType.parts[pi], pi).toLowerCase() : '';
+  const out = [];
+  $('#extras').querySelectorAll('input.extra').forEach(el => {
+    const v = clean(el.value);
+    if (v && v.toLowerCase() !== main && !out.some(o => o.toLowerCase() === v.toLowerCase())) out.push(v);
+  });
+  return out;
+}
+async function saveExtraCodes(folder, pdfName, codes){
+  const fname = pdfName + '.txt';
+  if (!codes.length){   // 덮어쓴 PDF에 예전 추가 코드가 남아 있으면 지운다
+    try { await (await (await root.getDirectoryHandle(CONFIG.EXTRA_DIR)).getDirectoryHandle(folder)).removeEntry(fname); } catch {}
+    return;
+  }
+  const dir = await (await root.getDirectoryHandle(CONFIG.EXTRA_DIR, {create:true})).getDirectoryHandle(folder, {create:true});
+  const w = await (await dir.getFileHandle(fname, {create:true})).createWritable();
+  await w.write(`# ${pdfName} 의 추가 제품코드 (ARTBOX Export Document Archiving이 검색에 사용)\r\n` + codes.join('\r\n') + '\r\n');
+  await w.close();
+}
+const parseExtra = t => t.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
 
 /* ---------- PDF 자동 입력 ----------
    pdf.js(vendor/pdfjs, 3.x legacy UMD)를 PDF를 처음 올릴 때 <script>로 불러온다.
@@ -1074,13 +1143,19 @@ async function search(){
   scanList = []; lastCodes = []; found = []; matchedAll = []; selected.clear();
   $('#results').innerHTML = '';
   $('#meta').textContent = '검색 중…';
+  const extraMap = {}, extraPrefix = CONFIG.EXTRA_DIR + '\\';
   for await (const item of walk(root)){
     if (my !== searchToken) return;
+    if (item.rel.startsWith(extraPrefix)){   // 추가 제품코드 txt: 검색 대상 파일이 아니라 코드 목록
+      try { extraMap[item.rel.slice(extraPrefix.length).replace(/\.txt$/i, '').toLowerCase()] = parseExtra(await (await item.handle.getFile()).text()); } catch {}
+      continue;
+    }
     const folderType = item.rel.includes('\\') ? TYPES.find(t => t.folder === item.rel.split('\\')[0]) || null : null;
     scanList.push({...item, folderType, type: typeOfFile(item.name, folderType), path: joinPath(CONFIG.BASE_UNC, item.rel)});
     if (scanList.length % 200 === 0) $('#meta').textContent = `검색 중… ${scanList.length}개 확인`;
   }
   if (my !== searchToken) return;
+  scanList.forEach(it => it.extra = extraMap[it.rel.toLowerCase()] || []);
   lastCodes = codes;
   await applyFilter();
 }
@@ -1096,7 +1171,10 @@ async function applyFilter(){
   for (const it of scanList){
     const lower = it.name.toLowerCase();
     const tokens = lower.replace(/\.[^.]+$/, '').split('_').map(s => s.trim());
-    it.hits = lastCodes.filter((c,i) => exact ? tokens.includes(qs[i]) : lower.includes(qs[i]));
+    const xs = it.extra.map(x => x.toLowerCase());
+    it.byName = lastCodes.filter((c,i) => exact ? tokens.includes(qs[i]) : lower.includes(qs[i]));
+    it.byExtra = lastCodes.filter((c,i) => !it.byName.includes(c) && xs.some(x => exact ? x === qs[i] : x.includes(qs[i])));
+    it.hits = [...it.byName, ...it.byExtra];
     if (it.hits.length) matched.push(it);
   }
   const list = matched.filter(it => it.type ? ids.includes(it.type.id) : allOn);
@@ -1143,7 +1221,8 @@ function renderResults(){
         <td class="ck"><input type="checkbox" data-ck="${i}" ${selected.has(r.rel) ? 'checked' : ''}></td>
         <td><span class="badge">${r.type ? `${r.type.id}. ${esc(r.type.name)}` : '기타'}</span>
           ${r.type && r.type !== r.folderType ? `<span class="misfiled" title="파일명의 서류유형과 저장된 폴더가 달라요">⚠ ${esc(r.rel.includes('\\') ? r.rel.split('\\')[0] : '최상위')} 폴더에 있음</span>` : ''}</td>
-        <td><button class="link" data-open="${i}" title="새 탭에서 열기">${esc(r.name)}</button></td>
+        <td><button class="link" data-open="${i}" title="새 탭에서 열기">${esc(r.name)}</button>
+          ${r.byExtra.length ? `<span class="incl">포함된 제품코드: ${r.extra.map(x => r.byExtra.some(c => c.toLowerCase() === x.toLowerCase()) ? `<b>${esc(x)}</b>` : esc(x)).join(', ')}</span>` : ''}</td>
         ${multi ? `<td><div class="hits">${r.hits.map(h => `<span>${esc(h)}</span>`).join('')}</div></td>` : ''}
         <td class="hide-sm nowrap muted">${r.file ? fmtDate(r.file.lastModified) : '-'}</td>
         <td class="hide-sm nowrap muted">${r.file ? fmtSize(r.file.size) : '-'}</td>
@@ -1214,10 +1293,11 @@ async function downloadReport(){
     {v:code, s:4}, {v:r.type ? `${r.type.id}. ${r.type.name}` : '기타', s:4}, {v:r.name, s:4}, {v:r.path, s:4},
     {v:r.file ? fmtDate(r.file.lastModified) : '', s:4},
     {v:r.type && r.type !== r.folderType ? (r.rel.includes('\\') ? r.rel.split('\\')[0] : '최상위') + ' 폴더에 있음' : '', s:4},
+    {v:r.extra.join(', '), s:4},
   ]);
   const xlsx = makeXlsx([
     {name:'검색 결과', head, rows, widths:[18, ...TYPES.map(() => 15), 12], freeze:true},
-    {name:'파일 목록', head:['코드','유형','파일명','경로','수정일','폴더 확인'], rows:list, widths:[18,24,48,70,12,22], freeze:true, filter:true},
+    {name:'파일 목록', head:['코드','유형','파일명','경로','수정일','폴더 확인','포함된 제품코드'], rows:list, widths:[18,24,48,70,12,22,30], freeze:true, filter:true},
   ]);
   const url = URL.createObjectURL(xlsx);
   const a = document.createElement('a');
