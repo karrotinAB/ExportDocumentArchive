@@ -858,7 +858,7 @@ async function save(){
     let extraMsg = '';
     if (canEdit()){
       try { await saveExtraCodes(curType.folder, name, ex); if (ex.length) extraMsg = `추가 제품코드 ${ex.length}개도 함께 저장했어요: ${ex.join(', ')}`; }
-      catch(e){ extraMsg = `⚠ PDF는 저장했지만 추가 제품코드를 저장하지 못했어요 (${e.code || e.message}). 다시 저장해 주세요.`; }
+      catch(e){ extraMsg = `⚠ PDF는 저장했지만 추가 제품코드를 저장하지 못했어요 (${fbErr(e)}). 다시 저장해 주세요.`; }
     }
     $('#doneExtra').hidden = !extraMsg; $('#doneExtra').textContent = extraMsg;
     resetForm();
@@ -1308,7 +1308,7 @@ async function search(){
         const {path, codes} = d.data(), k = String(path || '').toLowerCase();
         extraMap[k] = [...new Set([...(extraMap[k] || []), ...(codes || [])])];
       });
-    } catch(e){ toast('클라우드의 추가 제품코드를 읽지 못했어요: ' + (e.code || e.message)); }
+    } catch(e){ toast('클라우드의 추가 제품코드를 읽지 못했어요: ' + (fbErr(e))); }
     if (my !== searchToken) return;
   }
   scanList.forEach(it => it.extra = extraMap[it.rel.toLowerCase()] || []);
@@ -1467,7 +1467,7 @@ function watchReasons(codes){
       part.forEach(k => codes.filter(c => docKey(c) === k).forEach(c => reasons[c] = {}));
       s.forEach(d => codes.filter(c => docKey(c) === d.id).forEach(c => reasons[c] = d.data().items || {}));
       if (!$('#rpModal').hidden) renderReport();
-    }, e => toast('사유를 읽지 못했어요: ' + (e.code || e.message))));
+    }, e => toast('사유를 읽지 못했어요: ' + (fbErr(e)))));
   }
 }
 function stopReasons(){ rpUnsubs.forEach(u => u()); rpUnsubs = []; }
@@ -1529,7 +1529,7 @@ async function setReason(code, typeId, patch){
   const cell = (!cur.reason && !cur.memo) ? FV.delete()
     : {reason: cur.reason || '', memo: cur.memo || '', by: me, at: fmtDate(Date.now())};
   try { await db.collection('exReasons').doc(docKey(code)).set({code, items: {[typeId]: cell}}, {merge: true}); toast('저장했어요'); }
-  catch(e){ toast('사유 저장 실패: ' + (e.code || e.message)); }
+  catch(e){ toast('사유 저장 실패: ' + (fbErr(e))); }
 }
 function downloadReport(){
   const url = URL.createObjectURL(buildReport(lastCodes, null, cloudOn() ? reasons : {}));
@@ -1570,7 +1570,7 @@ async function updateSharedReport(){
     }
     if (added.length) await meta.set({codes: firebase.firestore.FieldValue.arrayUnion(...added)}, {merge: true});
     toast(`공용폴더 ${CONFIG.REPORT_FILE}을(를) 업데이트했어요 (코드 ${codes.length}개${added.length ? `, 새로 ${added.length}개` : ''})`);
-  }catch(e){ toast('업데이트 실패: ' + (e.code || e.message)); }
+  }catch(e){ toast('업데이트 실패: ' + (fbErr(e))); }
   finally{ btn.disabled = false; btn.textContent = old; }
 }
 function buildReport(codes, notes, rmap){
@@ -1785,6 +1785,10 @@ const cloudOn = () => !!(me && EX_LEVELS[exLevel]);
 const canEdit = () => cloudOn() && exLevel !== 'view';
 const isAdmin = () => me && exLevel === 'admin';
 const docKey = s => encodeURIComponent(String(s).trim().toLowerCase());   // 문서 ID ('/'를 못 씀)
+/* Firebase 오류를 알기 쉽게. permission-denied = 보안 규칙이 게시되지 않았거나 권한이 없는 계정 */
+const fbErr = e => e?.code === 'permission-denied'
+  ? '권한이 없어요. Firebase 콘솔 → Firestore Database → 규칙 탭에 최신 firestore.rules가 게시됐는지 확인해 주세요'
+  : e?.code === 'unavailable' ? '인터넷에 연결되지 않았어요' : (e?.code || e?.message || String(e));
 function initFirebase(){
   if (!window.firebase?.initializeApp){
     $('#loginErr').textContent = '로그인 기능 파일(vendor/firebase)을 찾지 못했어요. 로그인 없이 쓸 수 있어요.';
@@ -1881,7 +1885,7 @@ function startAccounts(){
   unsubRoles = db.collection('roles').onSnapshot(s => {
     roles = s.docs.map(d => ({id: d.id, ...d.data()}));
     if (!$('#viewAdmin').hidden) renderAccounts();
-  }, e => toast('계정 목록을 읽지 못했어요: ' + (e.code || e.message)));
+  }, e => toast('계정 목록을 읽지 못했어요: ' + (fbErr(e))));
 }
 function stopAccounts(){ unsubRoles?.(); unsubRoles = null; roles = []; }
 async function createLogin(email){
@@ -1912,7 +1916,7 @@ function renderAccounts(){
     try {
       await db.collection('roles').doc(id).update({ex: sel.value, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: me});
       toast('권한을 바꿨어요');
-    } catch(e){ toast('저장 실패: ' + (e.code || e.message)); sel.value = prev; }
+    } catch(e){ toast('저장 실패: ' + (fbErr(e))); sel.value = prev; }
   });
   $('#accBody').querySelectorAll('[data-reset]').forEach(b => b.onclick = async () => {
     const id = b.dataset.reset;
@@ -1979,7 +1983,7 @@ $('#btnMigrate').onclick = async () => {
       await ref.set({path, codes: [...new Set([...have, ...codes])], by: me, at: FV.serverTimestamp()}); ne++;
     }
     msg.textContent = `다 옮겼어요 · 사유 ${nr}칸, 추가 제품코드 ${ne}개 파일` + (nc ? `, 보고서 코드 ${nc}개` : '');
-  } catch(e){ msg.textContent = '옮기다 멈췄어요: ' + (e.code || e.message) + ' (다시 누르면 이어서 옮겨요)'; }
+  } catch(e){ msg.textContent = '옮기다 멈췄어요: ' + (fbErr(e)) + ' (다시 누르면 이어서 옮겨요)'; }
   finally { btn.disabled = false; }
 };
 
