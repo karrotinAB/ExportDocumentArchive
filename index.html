@@ -278,6 +278,10 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
 .langpill{display:inline-flex; border:1px solid var(--border); border-radius:999px; overflow:hidden; background:#fff}
 .langpill button{border:none; background:none; padding:6px 13px; font-size:13px; font-weight:600; color:var(--muted); cursor:pointer}
 .langpill button.on{background:var(--brand); color:#fff}
+.rnbox{width:min(760px, 100%); overflow:auto}
+.rnold{font-size:13px; color:var(--muted); margin-top:10px; word-break:break-all}
+.rnold code{font-family:ui-monospace,Consolas,monospace; color:var(--text)}
+.rnbox .field select, .rnbox .field input{width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:#fff}
 [hidden]{display:none !important}
 </style>
 </head>
@@ -488,6 +492,20 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
     </div>
     <div class="rpwrap"><table class="rp" id="rpTable"></table></div>
   </div>
+</div>
+
+<!-- 파일명 수정 -->
+<div class="modal" id="rnModal" hidden>
+  <form class="mbox rnbox" id="rnForm">
+    <div class="mhead"><h2 id="rnTitle">파일명 수정</h2><button type="button" class="mclose" id="rnClose">✕</button></div>
+    <div class="rnold"><span class="lbl" id="rnOldLbl">지금 파일</span> <code id="rnOld"></code></div>
+    <div class="field" style="margin:14px 0"><label for="rnType" id="rnTypeLbl">서류 유형</label><select id="rnType"></select></div>
+    <p class="muted" id="rnGuess" style="font-size:12.5px; margin:0 0 10px"></p>
+    <div class="form" id="rnFields"></div>
+    <div class="preview"><div class="lbl" id="rnNewLbl">바뀔 파일명</div><div class="name" id="rnNew"></div><div class="path" id="rnPath"></div></div>
+    <div class="err" id="rnErr" style="margin-top:8px"></div>
+    <div class="actions"><button type="button" class="btn" id="rnCancel">취소</button><button class="btn primary" id="rnGo">파일명 바꾸기</button></div>
+  </form>
 </div>
 
 <div id="toast"></div>
@@ -1531,6 +1549,7 @@ function renderResults(){
         <td><div class="rowbtns">
           <button class="btn small" data-copy="${i}" title="${esc(r.path)}">${T('경로 복사', 'Copy path')}</button>
           <button class="btn small" data-copydir="${i}">${T('폴더 복사', 'Copy folder')}</button>
+          ${canEdit() ? `<button class="btn small" data-rename="${i}" title="${T('서류 유형의 파일명 규칙으로 이름 바꾸기', 'Rename using the document type pattern')}">${T('파일명 수정', 'Rename')}</button>` : ''}
         </div></td>
       </tr>`).join('')}</tbody></table>`;
   bindMissing(missing);
@@ -1552,6 +1571,7 @@ function renderResults(){
   $('#btnDlFolder').onclick = downloadToFolder;
   $('#results').querySelectorAll('[data-open]').forEach(b => b.onclick = () => openFile(found[+b.dataset.open]));
   $('#results').querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copyText(found[+b.dataset.copy].path));
+  $('#results').querySelectorAll('[data-rename]').forEach(b => b.onclick = () => openRename(found[+b.dataset.rename]));
   $('#results').querySelectorAll('[data-copydir]').forEach(b => b.onclick = () => {
     const p = found[+b.dataset.copydir].path; copyText(p.slice(0, p.lastIndexOf('\\')));
   });
@@ -1836,6 +1856,126 @@ function downloadList(){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
   toast(T(`목록 ${found.length}건을 엑셀로 받았어요`, `Downloaded the list of ${found.length} files`));
+}
+
+/* ---------- 파일명 수정 (파일 찾기 결과, 편집 권한) ----------
+   서류 유형의 파일명 규칙(업로드와 같은 칸)으로 새 이름을 만들고, 그 유형 폴더에 저장한 뒤 예전 파일을 지움.
+   지금 파일명을 '_'로 나눠서 칸에 미리 채움 (칸 수가 맞을 때만). 클라우드의 추가 제품코드도 새 이름으로 옮김. */
+const FIELD_EN = {buyer:'Buyer code', pref:'Preferential / Non-preferential', country:'Country', invoice:'Invoice no.', issueDate:'Issue date',
+  maker:'Manufacturer code', product:'Main product code', agency:'Testing agency', age:'Age grade', lot:'LOT / BATCH no.', expiry:'Expiry date', docType:'Document type'};
+let rnItem = null;
+const rnType = () => TYPES.find(t => t.id === +$('#rnType').value);
+function openRename(r){
+  if (!canEdit()){ toast(T('파일명을 바꿀 권한이 없어요', 'You do not have permission to rename files')); return; }
+  rnItem = r;
+  $('#rnTitle').textContent = T('파일명 수정', 'Rename file');
+  $('#rnOldLbl').textContent = T('지금 파일', 'Current file');
+  $('#rnOld').textContent = r.rel;
+  $('#rnTypeLbl').textContent = T('서류 유형', 'Document type');
+  $('#rnNewLbl').textContent = T('바뀔 파일명', 'New file name');
+  $('#rnCancel').textContent = T('취소', 'Cancel');
+  $('#rnGo').textContent = T('파일명 바꾸기', 'Rename');
+  $('#rnType').innerHTML = TYPES.map(t => `<option value="${t.id}">${t.id}. ${esc(typeName(t))}</option>`).join('');
+  $('#rnType').value = (r.type || r.folderType || TYPES[0]).id;
+  renderRnFields();
+  $('#rnErr').textContent = '';
+  $('#rnModal').hidden = false;
+  const first = $('#rnFields').querySelector('input:not([readonly]),select'); if (first) first.focus();
+}
+function closeRename(){ $('#rnModal').hidden = true; rnItem = null; }
+/* 지금 파일명 → 칸 값 (칸 수가 같거나, 선택 칸을 빼면 같을 때만) */
+function guessParts(t, name){
+  const tokens = name.replace(/\.[^.]+$/, '').split('_').map(s => s.trim());
+  if (tokens.length === t.parts.length) return t.parts.map((p, i) => tokens[i]);
+  const need = t.parts.filter(p => !p.optional).length;
+  if (tokens.length === need){ let k = 0; return t.parts.map(p => p.optional ? '' : tokens[k++]); }
+  return null;
+}
+function renderRnFields(){
+  const t = rnType(), guess = guessParts(t, rnItem.name);
+  $('#rnFields').innerHTML = t.parts.map((p, i) => {
+    const id = `rn_${i}`, label = T(p.label, FIELD_EN[p.key] || p.label), opt = p.optional ? ` <em>(${T('선택', 'optional')})</em>` : '';
+    const g = guess ? guess[i] || '' : '';
+    let input;
+    if (p.kind === 'fixed')       input = `<input id="${id}" value="${esc(p.value)}" readonly>`;
+    else if (p.kind === 'select') input = `<select id="${id}"><option value="">${T('선택하세요', 'Select')}</option>${p.options.map(o => `<option${o === g ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+    else if (p.kind === 'date')   input = `<input id="${id}" type="date" value="${/^\d{8}$/.test(g) ? `${g.slice(0,4)}-${g.slice(4,6)}-${g.slice(6)}` : ''}">`;
+    else                          input = `<input id="${id}" value="${esc(g || p.value || '')}" placeholder="${esc(p.ph || '')}" autocomplete="off">`;
+    return `<div class="field"><label for="${id}">${esc(label)}${opt}</label>${input}</div>`;
+  }).join('');
+  $('#rnFields').querySelectorAll('input,select').forEach(el => el.oninput = el.onchange = rnPreview);
+  $('#rnGuess').textContent = guess ? '' : T('지금 파일명이 이 유형의 규칙과 달라서 칸을 미리 채우지 못했어요. 직접 넣어 주세요.', 'The current name does not follow this type\'s pattern, so please fill in the fields.');
+  rnPreview();
+}
+function rnBuild(){
+  const t = rnType(), missing = [];
+  const segs = t.parts.map((p, i) => {
+    let v = p.kind === 'fixed' ? p.value : ($(`#rn_${i}`)?.value || '');
+    v = p.kind === 'date' ? v.replaceAll('-', '') : p.kind === 'fixed' ? v : clean(v);
+    if (!v && !p.optional) missing.push(T(p.label, FIELD_EN[p.key] || p.label));
+    return v;
+  });
+  const ext = (rnItem.name.match(/\.[^.]+$/) || ['.pdf'])[0].toLowerCase();
+  return {t, name: segs.filter(Boolean).join('_') + ext, missing};
+}
+function rnPreview(){
+  const {t, name, missing} = rnBuild();
+  $('#rnNew').textContent = missing.length ? T('빠진 칸: ', 'Missing: ') + missing.join(', ') : name;
+  const moving = !rnItem.rel.startsWith(t.folder + '\\');
+  $('#rnPath').textContent = T('저장 위치: ', 'Saved to: ') + joinPath(CONFIG.BASE_UNC, t.folder, missing.length ? '…' : name) +
+    (moving ? T(' (지금과 다른 폴더로 옮겨져요)', ' (moves to a different folder)') : '');
+  $('#rnGo').disabled = !!missing.length;
+}
+async function doRename(e){
+  e.preventDefault();
+  const r = rnItem, {t, name, missing} = rnBuild(), err = $('#rnErr');
+  if (!r || missing.length) return;
+  const newRel = t.folder + '\\' + name;
+  if (newRel === r.rel){ err.textContent = T('지금 파일명과 같아요.', 'The name is unchanged.'); return; }
+  if (newRel.toLowerCase() === r.rel.toLowerCase()){ err.textContent = T('대·소문자만 다른 이름으로는 바꿀 수 없어요.', 'Names that differ only in upper/lower case are not allowed.'); return; }
+  if (!(await ensureRoot())) return;
+  $('#rnGo').disabled = true; err.textContent = '';
+  try {
+    const dir = await root.getDirectoryHandle(t.folder, {create: true});
+    let exists = false; try { await dir.getFileHandle(name); exists = true; } catch {}
+    if (exists && !confirm(T(`같은 이름의 파일이 이미 있어요.\n\n${name}\n\n덮어쓸까요?`, `A file with this name already exists.\n\n${name}\n\nOverwrite it?`))){ $('#rnGo').disabled = false; return; }
+    const file = await (await handleOf(r)).getFile();
+    const fh = await dir.getFileHandle(name, {create: true}), w = await fh.createWritable();
+    await w.write(file); await w.close();
+    // 예전 파일 지우기 (누가 열어 두었으면 실패할 수 있음)
+    let removed = true;
+    try {
+      const parts = r.rel.split('\\'); let d = root;
+      for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p);
+      await d.removeEntry(parts[parts.length - 1]);
+    } catch { removed = false; }
+    // 클라우드의 추가 제품코드를 새 이름으로
+    if (cloudOn()){
+      try {
+        const oldRef = db.collection('exExtra').doc(docKey(r.rel)), old = await oldRef.get();
+        if (old.exists){
+          await db.collection('exExtra').doc(docKey(newRel)).set({...old.data(), path: newRel, by: me, at: firebase.firestore.FieldValue.serverTimestamp()});
+          if (removed) await oldRef.delete();
+        }
+      } catch(e2){ console.warn('추가 제품코드를 옮기지 못했어요', e2); }
+    }
+    // 읽어 둔 목록 고치기
+    if (scanCache && scanCache.root === root){
+      if (removed) scanCache.files = scanCache.files.filter(f => f.rel !== r.rel);
+      addToScanCache(t.folder, name, fh);
+    }
+    const ok = r.rel.toLowerCase(), nk = newRel.toLowerCase();   // 화면의 추가 제품코드도 새 이름으로
+    if (lastExtraMap[ok]){ lastExtraMap[nk] = lastExtraMap[ok]; if (removed) delete lastExtraMap[ok]; }
+    selected.delete(r.rel);
+    closeRename();
+    if (lastCodes.length){ scanList = scanCache ? scanCache.files : scanList; applyExtras(); await applyFilter(); }
+    if (removed) toast(T(`파일명을 바꿨어요: ${name}`, `Renamed to ${name}`));
+    else alert(T(`새 이름으로 저장했지만 예전 파일을 지우지 못했어요 (누가 열어 두었을 수 있어요).\n\n예전 파일: ${r.rel}\n\n탐색기에서 직접 지워 주세요.`,
+      `Saved with the new name, but the old file could not be deleted (it may be open).\n\nOld file: ${r.rel}\n\nPlease delete it in File Explorer.`));
+  } catch(e3){
+    err.textContent = T('바꾸지 못했어요: ', 'Could not rename: ') + e3.message;
+    $('#rnGo').disabled = false;
+  }
 }
 
 /* ---------- 일괄 다운로드 ---------- */
@@ -2183,12 +2323,15 @@ $('#btnCopyDone').onclick = () => copyText(lastSavedPath);
 $('#btnSameType').onclick = () => openForm(curType.id);
 $('#btnSearch').onclick = () => search();
 $('#btnReport').onclick = openReport;
+$('#rnType').onchange = renderRnFields;
+$('#rnForm').onsubmit = doRename;
+$('#rnClose').onclick = $('#rnCancel').onclick = closeRename;
 document.querySelectorAll('.langpill button').forEach(b => b.onclick = () => setLang(b.dataset.lang));
 $('#rpClose').onclick = closeReport;
 $('#rpModal').onclick = e => { if (e.target.id === 'rpModal') closeReport(); };
 $('#rpExcel').onclick = downloadReport;
 $('#rpUpdate').onclick = updateSharedReport;
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#rpModal').hidden) closeReport(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#rpModal').hidden) closeReport(); if (e.key === 'Escape' && !$('#rnModal').hidden) closeRename(); });
 $('#q').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); search(); } };
 $('#q').oninput = fitQ;
 $('#exact').onchange = applyFilter;
