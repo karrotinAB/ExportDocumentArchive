@@ -512,6 +512,8 @@ const CONFIG = {
   REASON_DIR: '_없는서류사유',
   // 보고서 '업데이트 하기'가 공용폴더 맨 위에 만들어 두는 누적 엑셀 (여태 업데이트한 모든 코드)
   REPORT_FILE: '없는서류_현황.xlsx',
+  // 검색을 빠르게 하려고 공용폴더 맨 위에 두는 파일 목록 (사이트가 알아서 만들고 고침. 지워도 다음 검색 때 다시 만듦)
+  INDEX_FILE: '_검색목록.json',
   // 사유 선택지. id는 저장용이라 바꾸지 말고, 이름(label)·색(color: red/orange/gray)만 바꾸세요
   REASONS: [
     {id:'asked',  label:'문의했으나 없음',  en:'Asked – not available', color:'orange'},
@@ -1321,40 +1323,53 @@ let found = [];
 let matchedCount = 0;
 let matchedAll = [];      // 서류 유형 필터 전 결과 (보고서용)
 const selected = new Set();   // 체크한 파일 (rel)
-/* 공용폴더 파일 목록 읽기 — 빠르게:
-   ① 폴더 여러 개를 동시에 읽음 (네트워크 드라이브는 폴더 하나 여는 데 시간이 걸려서, 차례로 읽으면 느림)
-   ② 한 번 읽은 목록은 이 탭에서 SCAN_KEEP_MIN분 동안 다시 씀 (다음 검색은 바로). '다시 읽기'로 언제든 새로 읽음.
-      이 탭에서 올린 파일은 목록에 바로 더함. 다른 사람이 그사이 올린 파일은 다시 읽어야 보임 */
-const SCAN_KEEP_MIN = 10, SCAN_PARALLEL = 8;
-let scanCache = null;   // {root, at, files, legacyExtra}
-async function scanAll(my, onProgress){
+/* 공용폴더 파일 목록 — 빠르게 찾는 방법:
+   ① 검색용 목록 파일(CONFIG.INDEX_FILE, 공용폴더 맨 위): 누가 폴더를 다 읽을 때마다 파일 경로 목록을 여기에 저장.
+      다음 검색은 이 파일 하나만 읽어서 바로 결과를 보여 주고, 그동안 뒤에서 폴더를 새로 읽어 바뀐 게 있으면 결과를 고침.
+   ② 폴더를 SCAN_PARALLEL개씩 동시에 읽음 (네트워크 드라이브는 폴더 하나 여는 데 시간이 걸림).
+   ③ 한 번 읽은 목록은 이 탭에서 다시 씀. SCAN_KEEP_MIN분이 지나면 다음 검색 때 뒤에서 새로 읽음. '다시 읽기' = 지금 바로 새로.
+   이 탭에서 올린 파일은 목록(과 목록 파일)에 바로 더함. 파일 핸들은 열거나 받을 때 경로로 찾음(handleOf). */
+const SCAN_KEEP_MIN = 10, SCAN_PARALLEL = 16;
+let scanCache = null;   // {root, at, files, legacyExtra, fromIndex}
+let scanToken = 0, bgScanning = false, lastExtraMap = {};
+function mkItem(rel, handle){
+  const name = rel.split('\\').pop();
+  const folderType = rel.includes('\\') ? TYPES.find(t => t.folder === rel.split('\\')[0]) || null : null;
+  return {name, rel, handle, folderType, type: typeOfFile(name, folderType), path: joinPath(CONFIG.BASE_UNC, rel)};
+}
+async function handleOf(it){
+  if (!it.handle){
+    const parts = it.rel.split('\\'); let d = root;
+    for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p);
+    it.handle = await d.getFileHandle(parts[parts.length - 1]);
+  }
+  return it.handle;
+}
+async function scanAll(cancelled, onProgress){
   const files = [], legacyExtra = {}, extraPrefix = CONFIG.EXTRA_DIR + '\\';
   const queue = [{dir: root, prefix: ''}], extraTxt = [];
   let active = 0, failed = 0;
   await new Promise(done => {
     const next = () => {
-      if (my !== searchToken) return done();
-      if (!queue.length && !active) return done();
+      if (cancelled() || (!queue.length && !active)) return done();
       while (active < SCAN_PARALLEL && queue.length){
         const {dir, prefix} = queue.shift(); active++;
         (async () => {
           for await (const [name, h] of dir.entries()){
-            if (my !== searchToken) return;
+            if (cancelled()) return;
             const rel = prefix ? prefix + '\\' + name : name;
             if (h.kind === 'directory'){ if (rel !== CONFIG.REASON_DIR) queue.push({dir: h, prefix: rel}); next(); continue; }   // 예전 사유 폴더는 안 읽음 (클라우드로 옮김)
-            if (rel === CONFIG.REPORT_FILE) continue;                                   // 누적 엑셀
-            if (rel.startsWith(extraPrefix)){ extraTxt.push({rel, handle: h}); continue; }   // 예전 추가 제품코드 txt
-            const folderType = rel.includes('\\') ? TYPES.find(t => t.folder === rel.split('\\')[0]) || null : null;
-            files.push({name, rel, handle: h, folderType, type: typeOfFile(name, folderType), path: joinPath(CONFIG.BASE_UNC, rel)});
-            if (files.length % 100 === 0) onProgress(files.length);
+            if (rel === CONFIG.REPORT_FILE || rel === CONFIG.INDEX_FILE) continue;          // 누적 엑셀 · 검색용 목록 파일
+            if (rel.startsWith(extraPrefix)){ extraTxt.push({rel, handle: h}); continue; }  // 예전 추가 제품코드 txt
+            files.push(mkItem(rel, h));
+            if (onProgress && files.length % 100 === 0) onProgress(files.length);
           }
         })().catch(() => failed++).finally(() => { active--; next(); });
       }
     };
     next();
   });
-  // 예전 추가 제품코드 txt도 여러 개씩 동시에
-  for (let i = 0; i < extraTxt.length && my === searchToken; i += SCAN_PARALLEL){
+  for (let i = 0; i < extraTxt.length && !cancelled(); i += SCAN_PARALLEL){
     await Promise.all(extraTxt.slice(i, i + SCAN_PARALLEL).map(async x => {
       try { legacyExtra[x.rel.slice(extraPrefix.length).replace(/\.txt$/i, '').toLowerCase()] = parseExtra(await (await x.handle.getFile()).text()); } catch {}
     }));
@@ -1362,6 +1377,42 @@ async function scanAll(my, onProgress){
   if (failed) console.warn(`폴더 ${failed}개를 읽지 못했어요`);
   return {files, legacyExtra};
 }
+async function loadIndex(){
+  try {
+    const f = await (await root.getFileHandle(CONFIG.INDEX_FILE)).getFile(), j = JSON.parse(await f.text());
+    if (!Array.isArray(j.files)) return null;
+    return {root, at: j.at || f.lastModified, files: j.files.map(rel => mkItem(rel, null)), legacyExtra: j.legacyExtra || {}, fromIndex: true};
+  } catch { return null; }
+}
+async function saveIndex(c){
+  try {
+    const w = await (await root.getFileHandle(CONFIG.INDEX_FILE, {create: true})).createWritable();
+    await w.write(JSON.stringify({v: 1, at: c.at, by: me || '', files: c.files.map(f => f.rel), legacyExtra: c.legacyExtra}));
+    await w.close();
+  } catch(e){ console.warn('검색용 목록 파일을 저장하지 못했어요', e); }
+}
+/* 폴더를 다 읽기 (기다림) */
+async function fullScan(my){
+  const tok = ++scanToken;
+  $('#meta').textContent = T('공용폴더 파일 목록을 읽는 중…', 'Reading the shared folder…');
+  const res = await scanAll(() => my !== searchToken || tok !== scanToken,
+    n => { if (my === searchToken) $('#meta').textContent = T(`공용폴더 파일 목록을 읽는 중… ${n}개`, `Reading the shared folder… ${n} files`); });
+  if (my !== searchToken || tok !== scanToken) return false;
+  scanCache = {root, at: Date.now(), ...res}; saveIndex(scanCache);
+  return true;
+}
+/* 뒤에서 새로 읽기 (결과는 먼저 보여 주고, 다 읽으면 결과를 고침) */
+function startBgScan(){
+  if (bgScanning) return;
+  bgScanning = true; const tok = ++scanToken, r0 = root;
+  scanAll(() => tok !== scanToken || root !== r0).then(res => {
+    if (tok !== scanToken || root !== r0) return;
+    scanCache = {root, at: Date.now(), ...res}; saveIndex(scanCache);
+    if (tok === scanToken) bgScanning = false;
+    if (lastCodes.length){ scanList = scanCache.files; applyExtras(); return applyFilter(); }   // 결과를 새 목록으로 다시
+  }).finally(() => { if (tok === scanToken){ bgScanning = false; if (lastCodes.length) renderMeta(); } });
+}
+function applyExtras(){ scanList.forEach(it => it.extra = lastExtraMap[it.rel.toLowerCase()] || []); }
 async function search(force){
   const codes = splitCodes($('#q').value);
   if (!codes.length){ toast(T('제품코드를 입력해주세요', 'Please enter a product code')); return; }
@@ -1370,17 +1421,16 @@ async function search(force){
   scanList = []; lastCodes = []; found = []; matchedAll = []; selected.clear();
   $('#results').innerHTML = '';
   $('#meta').textContent = T('검색 중…', 'Searching…');
-  const fresh = scanCache && scanCache.root === root && Date.now() - scanCache.at < SCAN_KEEP_MIN * 60000;
-  if (force === true || !fresh){
-    $('#meta').textContent = T('공용폴더 파일 목록을 읽는 중…', 'Reading the shared folder…');
-    const t0 = Date.now();
-    const res = await scanAll(my, n => { if (my === searchToken) $('#meta').textContent = T(`공용폴더 파일 목록을 읽는 중… ${n}개`, `Reading the shared folder… ${n} files`); });
+  if (force === true){ bgScanning = false; if (!(await fullScan(my))) return; }
+  else if (!scanCache || scanCache.root !== root){
+    const idx = await loadIndex();
     if (my !== searchToken) return;
-    scanCache = {root, at: Date.now(), ...res};
-    console.info(`파일 ${res.files.length}개 읽음 · ${((Date.now() - t0) / 1000).toFixed(1)}초`);
+    if (idx){ scanCache = idx; startBgScan(); }                 // 목록 파일로 바로 찾고, 뒤에서 확인
+    else if (!(await fullScan(my))) return;                     // 목록 파일이 없으면 처음 한 번은 다 읽음
   }
+  else if (Date.now() - scanCache.at > SCAN_KEEP_MIN * 60000) startBgScan();
   const extraMap = {};
-  for (const [k, v] of Object.entries(scanCache.legacyExtra)) extraMap[k] = [...v];
+  for (const [k, v] of Object.entries(scanCache.legacyExtra || {})) extraMap[k] = [...v];
   if (cloudOn()){   // 클라우드의 추가 제품코드 (예전 txt와 합침) — 바뀔 수 있어서 검색할 때마다 읽음
     try {
       (await db.collection('exExtra').get()).forEach(d => {
@@ -1390,17 +1440,18 @@ async function search(force){
     } catch(e){ toast(T('클라우드의 추가 제품코드를 읽지 못했어요: ', 'Could not read extra product codes: ') + (fbErr(e))); }
     if (my !== searchToken) return;
   }
-  scanList = scanCache.files;
-  scanList.forEach(it => it.extra = extraMap[it.rel.toLowerCase()] || []);
+  lastExtraMap = extraMap;
+  scanList = scanCache.files; applyExtras();
   lastCodes = codes;
   await applyFilter();
 }
-/* 이 탭에서 올린 파일은 읽어 둔 목록에 바로 더함 (다시 읽지 않아도 검색됨) */
+/* 이 탭에서 올린 파일은 읽어 둔 목록(과 목록 파일)에 바로 더함 */
 function addToScanCache(folder, name, handle){
   if (!scanCache || scanCache.root !== root) return;
-  const rel = folder + '\\' + name, folderType = TYPES.find(t => t.folder === folder) || null;
+  const rel = folder + '\\' + name;
   scanCache.files = scanCache.files.filter(f => f.rel !== rel);
-  scanCache.files.push({name, rel, handle, folderType, type: typeOfFile(name, folderType), path: joinPath(CONFIG.BASE_UNC, rel)});
+  scanCache.files.push(mkItem(rel, handle));
+  if (!bgScanning) saveIndex(scanCache);
 }
 /* 검색어 · 정확히 일치 · 서류 유형 필터 적용 (다시 읽지 않음) */
 async function applyFilter(){
@@ -1423,7 +1474,7 @@ async function applyFilter(){
   const list = matched.filter(it => it.type ? ids.includes(it.type.id) : allOn);
   const need = list.filter(it => it.file === undefined);   // 수정일·크기: 여러 개씩 동시에
   for (let i = 0; i < need.length; i += SCAN_PARALLEL)
-    await Promise.all(need.slice(i, i + SCAN_PARALLEL).map(async it => { try { it.file = await it.handle.getFile(); } catch { it.file = null; } }));
+    await Promise.all(need.slice(i, i + SCAN_PARALLEL).map(async it => { try { it.file = await (await handleOf(it)).getFile(); } catch { it.file = null; } }));
   if (my !== searchToken) return;
   const order = c => lastCodes.indexOf(c);
   list.sort((a,b) => order(a.hits[0]) - order(b.hits[0]) || (a.type?.id ?? 99) - (b.type?.id ?? 99) || a.name.localeCompare(b.name));
@@ -1438,7 +1489,8 @@ function renderMeta(){
   const at = scanCache ? new Date(scanCache.at) : null, hm = at ? `${String(at.getHours()).padStart(2,'0')}:${String(at.getMinutes()).padStart(2,'0')}` : '';
   $('#meta').innerHTML = esc(T(`${label} 검색 결과 ${found.length}건 · 파일 ${scanList.length}개 확인`, `${label}: ${found.length} result${found.length === 1 ? '' : 's'} · ${scanList.length} files checked`) +
     (hidden ? T(` · 서류 유형 필터로 ${hidden}건 숨김`, ` · ${hidden} hidden by document type filter`) : '')) +
-    (hm ? ` <span class="rescan">· ${T(`파일 목록 ${hm} 기준`, `file list as of ${hm}`)} <button class="textbtn" id="btnRescan" title="${T('그사이 다른 사람이 올린 파일까지 보려면 공용폴더를 다시 읽어요', 'Read the shared folder again to include files added since')}">${T('다시 읽기', 'Re-read')}</button></span>` : '');
+    (hm && bgScanning ? ` <span class="rescan">· ${T(`파일 목록 ${hm} 기준 · 최신 목록 확인 중…`, `file list as of ${hm} · checking for changes…`)}</span>` : '') +
+    (hm && !bgScanning ? ` <span class="rescan">· ${T(`파일 목록 ${hm} 기준`, `file list as of ${hm}`)} <button class="textbtn" id="btnRescan" title="${T('그사이 다른 사람이 올린 파일까지 보려면 공용폴더를 다시 읽어요', 'Read the shared folder again to include files added since')}">${T('다시 읽기', 'Re-read')}</button></span>` : '');
   const rb = $('#btnRescan'); if (rb) rb.onclick = () => search(true);
 }
 function renderResults(){
@@ -1514,7 +1566,7 @@ function bindMissing(missing){
 async function openFile(r){
   const win = window.open('', '_blank');   // 팝업 차단 방지: 클릭 즉시 창을 먼저 연다
   try{
-    const file = await r.handle.getFile();
+    const file = await (await handleOf(r)).getFile();
     const url = URL.createObjectURL(file);  // 브라우저 메모리 안에서만 쓰는 임시 주소
     if (win) win.location.href = url; else window.open(url, '_blank');
     setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
@@ -1572,7 +1624,7 @@ async function openReport(){
   $('#rpModal').hidden = false;
   $('#rpTable').innerHTML = `<tbody><tr><td style="padding:30px">${T('불러오는 중…', 'Loading…')}</td></tr></tbody>`;
   for (const it of matchedAll){
-    if (it.file === undefined){ try { it.file = await it.handle.getFile(); } catch { it.file = null; } }
+    if (it.file === undefined){ try { it.file = await (await handleOf(it)).getFile(); } catch { it.file = null; } }
   }
   watchReasons(lastCodes);
   renderReport();
@@ -1648,7 +1700,7 @@ async function updateSharedReport(){
     codes = [...codes, ...added];
     const rmap = await fetchReasons(codes);   // 다른 사람이 고른 사유까지 최신으로
     for (const c of codes) for (const it of filesOf(c)){
-      if (it.file === undefined){ try { it.file = await it.handle.getFile(); } catch { it.file = null; } }
+      if (it.file === undefined){ try { it.file = await (await handleOf(it)).getFile(); } catch { it.file = null; } }
     }
     const now = new Date(), stamp = `${fmtDate(now)} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
     const was = lang; lang = 'ko';   // 공용폴더 누적 엑셀은 늘 한국어
@@ -1801,7 +1853,7 @@ function downloadZip(){
   return busy($('#btnDlZip'), T('ZIP 만드는 중…', 'Making ZIP…'), async () => {
     const entries = [];
     for (const r of rows){
-      const file = await r.handle.getFile();
+      const file = await (await handleOf(r)).getFile();
       entries.push({name: r.rel.replaceAll('\\', '/'), data: new Uint8Array(await file.arrayBuffer()), time: file.lastModified});
     }
     const url = URL.createObjectURL(makeZip(entries));
@@ -1820,7 +1872,7 @@ function downloadToFolder(){
     const dest = await window.showDirectoryPicker({id:'artbox-export-download', mode:'readwrite'});
     let n = 0;
     for (const r of rows){
-      const file = await r.handle.getFile();
+      const file = await (await handleOf(r)).getFile();
       const name = await freeName(dest, r.name);
       const w = await (await dest.getFileHandle(name, {create:true})).createWritable();
       await w.write(file); await w.close(); n++;
