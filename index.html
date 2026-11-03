@@ -248,10 +248,10 @@ table.rp td.cnt{font-weight:700; color:#9c0006}
 .loginview{overflow:hidden}
 /* 로그인 화면 캐릭터: 왼쪽 아래 외계인, 오른쪽 아래 별 (화면 모서리에 붙여서 그림의 잘린 가장자리가 안 보이게) */
 .loginchar{position:absolute; bottom:0; width:auto; z-index:0; user-select:none; -webkit-user-drag:none; pointer-events:none}
-.loginchar.l{left:0; height:min(60vh, 560px)}
-.loginchar.r{right:0; height:min(36vh, 300px)}
+.loginchar.l{left:0; height:min(36vh, 336px)}
+.loginchar.r{right:0; height:min(22vh, 180px)}
 .logincard{position:relative; z-index:1}
-@media (max-width:760px){ .loginchar{opacity:.35} .loginchar.l{height:34vh} .loginchar.r{height:20vh} }
+@media (max-width:760px){ .loginchar{opacity:.35} .loginchar.l{height:20vh} .loginchar.r{height:12vh} }
 /* 모든 화면 바닥 가운데 저작권 (인쇄에는 안 나옴) */
 .copyright{position:fixed; left:0; right:0; bottom:3px; z-index:45; text-align:center; font-size:11px; color:#8a8a8a; letter-spacing:.02em; pointer-events:none}
 body:has(#loginView:not([hidden])) .copyright{color:rgba(255,255,255,.75)}
