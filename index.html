@@ -133,6 +133,8 @@ h2{font-size:18px; margin:0 0 14px}
 .titlerow{display:flex; justify-content:space-between; align-items:flex-start; gap:12px}
 .btn.report{background:#3fa9f5; border-color:#3fa9f5; color:#fff; padding:9px 16px; white-space:nowrap}
 .btn.report:hover{background:#2196e6; border-color:#2196e6}
+.rescan{white-space:nowrap}
+.rescan .textbtn{font-size:13px}
 .missing{margin:-4px 0 12px; font-size:13px; color:var(--red); word-break:break-all}
 .bulkbar{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; font-size:13px}
 .bulkbar .rowbtns{gap:8px}
@@ -870,6 +872,7 @@ async function save(){
     const w = await fh.createWritable();
     await w.write(curFile); await w.close();
     lastSavedPath = joinPath(CONFIG.BASE_UNC, curType.folder, name);
+    addToScanCache(curType.folder, name, fh);
     $('#donePath').textContent = lastSavedPath;
     const ex = extraCodes();
     let extraMsg = '';
@@ -1318,7 +1321,48 @@ let found = [];
 let matchedCount = 0;
 let matchedAll = [];      // 서류 유형 필터 전 결과 (보고서용)
 const selected = new Set();   // 체크한 파일 (rel)
-async function search(){
+/* 공용폴더 파일 목록 읽기 — 빠르게:
+   ① 폴더 여러 개를 동시에 읽음 (네트워크 드라이브는 폴더 하나 여는 데 시간이 걸려서, 차례로 읽으면 느림)
+   ② 한 번 읽은 목록은 이 탭에서 SCAN_KEEP_MIN분 동안 다시 씀 (다음 검색은 바로). '다시 읽기'로 언제든 새로 읽음.
+      이 탭에서 올린 파일은 목록에 바로 더함. 다른 사람이 그사이 올린 파일은 다시 읽어야 보임 */
+const SCAN_KEEP_MIN = 10, SCAN_PARALLEL = 8;
+let scanCache = null;   // {root, at, files, legacyExtra}
+async function scanAll(my, onProgress){
+  const files = [], legacyExtra = {}, extraPrefix = CONFIG.EXTRA_DIR + '\\';
+  const queue = [{dir: root, prefix: ''}], extraTxt = [];
+  let active = 0, failed = 0;
+  await new Promise(done => {
+    const next = () => {
+      if (my !== searchToken) return done();
+      if (!queue.length && !active) return done();
+      while (active < SCAN_PARALLEL && queue.length){
+        const {dir, prefix} = queue.shift(); active++;
+        (async () => {
+          for await (const [name, h] of dir.entries()){
+            if (my !== searchToken) return;
+            const rel = prefix ? prefix + '\\' + name : name;
+            if (h.kind === 'directory'){ if (rel !== CONFIG.REASON_DIR) queue.push({dir: h, prefix: rel}); next(); continue; }   // 예전 사유 폴더는 안 읽음 (클라우드로 옮김)
+            if (rel === CONFIG.REPORT_FILE) continue;                                   // 누적 엑셀
+            if (rel.startsWith(extraPrefix)){ extraTxt.push({rel, handle: h}); continue; }   // 예전 추가 제품코드 txt
+            const folderType = rel.includes('\\') ? TYPES.find(t => t.folder === rel.split('\\')[0]) || null : null;
+            files.push({name, rel, handle: h, folderType, type: typeOfFile(name, folderType), path: joinPath(CONFIG.BASE_UNC, rel)});
+            if (files.length % 100 === 0) onProgress(files.length);
+          }
+        })().catch(() => failed++).finally(() => { active--; next(); });
+      }
+    };
+    next();
+  });
+  // 예전 추가 제품코드 txt도 여러 개씩 동시에
+  for (let i = 0; i < extraTxt.length && my === searchToken; i += SCAN_PARALLEL){
+    await Promise.all(extraTxt.slice(i, i + SCAN_PARALLEL).map(async x => {
+      try { legacyExtra[x.rel.slice(extraPrefix.length).replace(/\.txt$/i, '').toLowerCase()] = parseExtra(await (await x.handle.getFile()).text()); } catch {}
+    }));
+  }
+  if (failed) console.warn(`폴더 ${failed}개를 읽지 못했어요`);
+  return {files, legacyExtra};
+}
+async function search(force){
   const codes = splitCodes($('#q').value);
   if (!codes.length){ toast(T('제품코드를 입력해주세요', 'Please enter a product code')); return; }
   if (!(await ensureRoot())) return;
@@ -1326,31 +1370,37 @@ async function search(){
   scanList = []; lastCodes = []; found = []; matchedAll = []; selected.clear();
   $('#results').innerHTML = '';
   $('#meta').textContent = T('검색 중…', 'Searching…');
-  const extraMap = {}, extraPrefix = CONFIG.EXTRA_DIR + '\\';
-  for await (const item of walk(root)){
+  const fresh = scanCache && scanCache.root === root && Date.now() - scanCache.at < SCAN_KEEP_MIN * 60000;
+  if (force === true || !fresh){
+    $('#meta').textContent = T('공용폴더 파일 목록을 읽는 중…', 'Reading the shared folder…');
+    const t0 = Date.now();
+    const res = await scanAll(my, n => { if (my === searchToken) $('#meta').textContent = T(`공용폴더 파일 목록을 읽는 중… ${n}개`, `Reading the shared folder… ${n} files`); });
     if (my !== searchToken) return;
-    if (item.rel.startsWith(CONFIG.REASON_DIR + '\\') || item.rel === CONFIG.REPORT_FILE) continue;   // 보고서 사유 파일·누적 엑셀
-    if (item.rel.startsWith(extraPrefix)){   // 추가 제품코드 txt: 검색 대상 파일이 아니라 코드 목록
-      try { extraMap[item.rel.slice(extraPrefix.length).replace(/\.txt$/i, '').toLowerCase()] = parseExtra(await (await item.handle.getFile()).text()); } catch {}
-      continue;
-    }
-    const folderType = item.rel.includes('\\') ? TYPES.find(t => t.folder === item.rel.split('\\')[0]) || null : null;
-    scanList.push({...item, folderType, type: typeOfFile(item.name, folderType), path: joinPath(CONFIG.BASE_UNC, item.rel)});
-    if (scanList.length % 200 === 0) $('#meta').textContent = T(`검색 중… ${scanList.length}개 확인`, `Searching… ${scanList.length} files checked`);
+    scanCache = {root, at: Date.now(), ...res};
+    console.info(`파일 ${res.files.length}개 읽음 · ${((Date.now() - t0) / 1000).toFixed(1)}초`);
   }
-  if (my !== searchToken) return;
-  if (cloudOn()){   // 클라우드의 추가 제품코드 (예전 txt와 합침)
+  const extraMap = {};
+  for (const [k, v] of Object.entries(scanCache.legacyExtra)) extraMap[k] = [...v];
+  if (cloudOn()){   // 클라우드의 추가 제품코드 (예전 txt와 합침) — 바뀔 수 있어서 검색할 때마다 읽음
     try {
       (await db.collection('exExtra').get()).forEach(d => {
         const {path, codes} = d.data(), k = String(path || '').toLowerCase();
         extraMap[k] = [...new Set([...(extraMap[k] || []), ...(codes || [])])];
       });
-    } catch(e){ toast('클라우드의 추가 제품코드를 읽지 못했어요: ' + (fbErr(e))); }
+    } catch(e){ toast(T('클라우드의 추가 제품코드를 읽지 못했어요: ', 'Could not read extra product codes: ') + (fbErr(e))); }
     if (my !== searchToken) return;
   }
+  scanList = scanCache.files;
   scanList.forEach(it => it.extra = extraMap[it.rel.toLowerCase()] || []);
   lastCodes = codes;
   await applyFilter();
+}
+/* 이 탭에서 올린 파일은 읽어 둔 목록에 바로 더함 (다시 읽지 않아도 검색됨) */
+function addToScanCache(folder, name, handle){
+  if (!scanCache || scanCache.root !== root) return;
+  const rel = folder + '\\' + name, folderType = TYPES.find(t => t.folder === folder) || null;
+  scanCache.files = scanCache.files.filter(f => f.rel !== rel);
+  scanCache.files.push({name, rel, handle, folderType, type: typeOfFile(name, folderType), path: joinPath(CONFIG.BASE_UNC, rel)});
 }
 /* 검색어 · 정확히 일치 · 서류 유형 필터 적용 (다시 읽지 않음) */
 async function applyFilter(){
@@ -1371,9 +1421,9 @@ async function applyFilter(){
     if (it.hits.length) matched.push(it);
   }
   const list = matched.filter(it => it.type ? ids.includes(it.type.id) : allOn);
-  for (const it of list){
-    if (it.file === undefined){ try { it.file = await it.handle.getFile(); } catch { it.file = null; } }
-  }
+  const need = list.filter(it => it.file === undefined);   // 수정일·크기: 여러 개씩 동시에
+  for (let i = 0; i < need.length; i += SCAN_PARALLEL)
+    await Promise.all(need.slice(i, i + SCAN_PARALLEL).map(async it => { try { it.file = await it.handle.getFile(); } catch { it.file = null; } }));
   if (my !== searchToken) return;
   const order = c => lastCodes.indexOf(c);
   list.sort((a,b) => order(a.hits[0]) - order(b.hits[0]) || (a.type?.id ?? 99) - (b.type?.id ?? 99) || a.name.localeCompare(b.name));
@@ -1385,8 +1435,11 @@ async function applyFilter(){
 function renderMeta(){
   const label = lastCodes.length === 1 ? `"${lastCodes[0]}"` : T(`코드 ${lastCodes.length}개`, `${lastCodes.length} codes`);
   const hidden = matchedCount - found.length;
-  $('#meta').textContent = T(`${label} 검색 결과 ${found.length}건 · 파일 ${scanList.length}개 확인`, `${label}: ${found.length} result${found.length === 1 ? '' : 's'} · ${scanList.length} files checked`) +
-    (hidden ? T(` · 서류 유형 필터로 ${hidden}건 숨김`, ` · ${hidden} hidden by document type filter`) : '');
+  const at = scanCache ? new Date(scanCache.at) : null, hm = at ? `${String(at.getHours()).padStart(2,'0')}:${String(at.getMinutes()).padStart(2,'0')}` : '';
+  $('#meta').innerHTML = esc(T(`${label} 검색 결과 ${found.length}건 · 파일 ${scanList.length}개 확인`, `${label}: ${found.length} result${found.length === 1 ? '' : 's'} · ${scanList.length} files checked`) +
+    (hidden ? T(` · 서류 유형 필터로 ${hidden}건 숨김`, ` · ${hidden} hidden by document type filter`) : '')) +
+    (hm ? ` <span class="rescan">· ${T(`파일 목록 ${hm} 기준`, `file list as of ${hm}`)} <button class="textbtn" id="btnRescan" title="${T('그사이 다른 사람이 올린 파일까지 보려면 공용폴더를 다시 읽어요', 'Read the shared folder again to include files added since')}">${T('다시 읽기', 'Re-read')}</button></span>` : '');
+  const rb = $('#btnRescan'); if (rb) rb.onclick = () => search(true);
 }
 function renderResults(){
   const multi = lastCodes.length > 1;
@@ -2076,7 +2129,7 @@ $('#btnSave').onclick = save;
 $('#btnReset').onclick = resetForm;
 $('#btnCopyDone').onclick = () => copyText(lastSavedPath);
 $('#btnSameType').onclick = () => openForm(curType.id);
-$('#btnSearch').onclick = search;
+$('#btnSearch').onclick = () => search();
 $('#btnReport').onclick = openReport;
 document.querySelectorAll('.langpill button').forEach(b => b.onclick = () => setLang(b.dataset.lang));
 $('#rpClose').onclick = closeReport;
