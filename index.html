@@ -245,14 +245,17 @@ table.rp td.cnt{font-weight:700; color:#9c0006}
 .logincard input:focus, .pwbox input:focus{outline:2px solid var(--brand); outline-offset:-1px; border-color:transparent}
 .logincard .btn{padding:11px}
 .loginlink{background:none; border:none; padding:0; color:var(--muted); font-size:13px; text-decoration:underline; text-underline-offset:3px; cursor:pointer; text-align:center}
-.loginstage{display:flex; align-items:center; justify-content:center; gap:44px; width:100%}
-.loginchar{width:auto; height:170px; filter:drop-shadow(0 8px 14px rgba(0,0,0,.25)); user-select:none; -webkit-user-drag:none; animation:loginfloat 3.2s ease-in-out infinite}
-.loginchar.r{height:180px; animation-delay:-1.6s; filter:none;   /* 머리글용으로 오른쪽·아래가 잘린 그림이라 가장자리를 흐리게 */
-  -webkit-mask-image:linear-gradient(to right, #000 78%, transparent), linear-gradient(to bottom, #000 80%, transparent);
-  -webkit-mask-composite:source-in; mask-image:linear-gradient(to right, #000 78%, transparent), linear-gradient(to bottom, #000 80%, transparent); mask-composite:intersect}
-@keyframes loginfloat{0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)}}
-@media (max-width:760px){ .loginchar{display:none} }
-@media (prefers-reduced-motion:reduce){ .loginchar{animation:none} }
+.loginview{overflow:hidden}
+/* 로그인 화면 캐릭터: 왼쪽 아래 외계인, 오른쪽 아래 별 (화면 모서리에 붙여서 그림의 잘린 가장자리가 안 보이게) */
+.loginchar{position:absolute; bottom:0; width:auto; z-index:0; user-select:none; -webkit-user-drag:none; pointer-events:none}
+.loginchar.l{left:0; height:min(60vh, 560px)}
+.loginchar.r{right:0; height:min(36vh, 300px)}
+.logincard{position:relative; z-index:1}
+@media (max-width:760px){ .loginchar{opacity:.35} .loginchar.l{height:34vh} .loginchar.r{height:20vh} }
+/* 모든 화면 바닥 가운데 저작권 (인쇄에는 안 나옴) */
+.copyright{position:fixed; left:0; right:0; bottom:3px; z-index:45; text-align:center; font-size:11px; color:#8a8a8a; letter-spacing:.02em; pointer-events:none}
+body:has(#loginView:not([hidden])) .copyright{color:rgba(255,255,255,.75)}
+@media print{ .copyright{display:none} }
 .loginalt{border-top:1px solid var(--border); margin-top:8px; padding-top:12px; display:flex; flex-direction:column; gap:4px; align-items:center; text-align:center; font-size:12px; color:var(--muted)}
 .err{color:var(--red); font-size:13px; min-height:1px}
 .pwbox{width:min(380px, 100%); gap:10px}
@@ -434,8 +437,8 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
 
 <!-- 로그인 -->
 <div class="loginview" id="loginView">
-  <div class="loginstage">
   <img class="loginchar l" id="loginCharL" alt="" aria-hidden="true">
+  <img class="loginchar r" id="loginCharR" alt="" aria-hidden="true">
   <form class="logincard" id="loginForm">
     <div class="loginbrand">ARTBOX <b>Export Document Archiving</b></div>
     <div id="loginFields">
@@ -446,8 +449,6 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
     </div>
     <div class="err" id="loginErr"></div>
   </form>
-  <img class="loginchar r" id="loginCharR" alt="" aria-hidden="true">
-  </div>
 </div>
 
 <!-- 비밀번호 바꾸기 -->
@@ -480,6 +481,7 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
 </div>
 
 <div id="toast"></div>
+<div class="copyright" aria-label="저작권">© 2026 Karrot in AB</div>
 
 <!-- Firebase (로그인 · 사유 · 추가 제품코드). 저장소 안의 복사본을 씀 (vendor/firebase/README.md) -->
 <script src="vendor/firebase/firebase-app-compat.js"></script>
