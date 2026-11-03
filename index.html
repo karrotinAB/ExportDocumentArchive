@@ -271,6 +271,11 @@ table.acc input.nm{width:120px; padding:7px 10px; border:1px solid var(--border)
 table.acc .tag{display:inline-block; margin-left:6px; font-size:11px; font-weight:700; border-radius:6px; padding:1px 6px; background:var(--tile); color:var(--muted)}
 table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
 .migrate{margin-top:30px}
+/* ---------- 언어 (파일 찾기) ---------- */
+.titleright{display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end}
+.langpill{display:inline-flex; border:1px solid var(--border); border-radius:999px; overflow:hidden; background:#fff}
+.langpill button{border:none; background:none; padding:6px 13px; font-size:13px; font-weight:600; color:var(--muted); cursor:pointer}
+.langpill button.on{background:var(--brand); color:#fff}
 [hidden]{display:none !important}
 </style>
 </head>
@@ -377,20 +382,23 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
   <!-- 찾기 -->
   <section id="viewSearch" hidden>
     <div class="titlerow">
-      <h1>파일 찾기</h1>
-      <button class="btn report" id="btnReport" title="검색한 코드마다 1~9번 서류가 있는지 엑셀로 받기">검색 결과 보고서</button>
+      <h1 data-en="Find Files">파일 찾기</h1>
+      <div class="titleright">
+        <div class="langpill" role="group" aria-label="언어 / Language"><button type="button" data-lang="ko" class="on">한국어</button><button type="button" data-lang="en">English</button></div>
+        <button class="btn report" id="btnReport" title="검색한 코드마다 1~9번 서류가 있는지 엑셀로 받기" data-en-title="See which of documents 1–9 exist for each searched code" data-en="Search Report">검색 결과 보고서</button>
+      </div>
     </div>
-    <p class="sub">제품코드를 입력하세요. 업체코드나 인보이스 넘버로도 찾을 수 있어요.<br>
+    <p class="sub" data-en="Enter a product code. You can also search by supplier code or invoice number.<br>To search several at once, paste them from Excel or separate them with commas.">제품코드를 입력하세요. 업체코드나 인보이스 넘버로도 찾을 수 있어요.<br>
       여러 개를 한꺼번에 찾으려면 엑셀에서 복사해 붙여넣거나 쉼표로 구분하세요.</p>
     <div class="searchrow">
-      <textarea id="q" rows="1" placeholder="예: 8801234567890  (여러 개: 줄바꿈 · 쉼표로 구분)" autocomplete="off" spellcheck="false"></textarea>
-      <button class="btn primary" id="btnSearch">검색</button>
+      <textarea id="q" rows="1" placeholder="예: 8801234567890  (여러 개: 줄바꿈 · 쉼표로 구분)" data-en-ph="e.g. 8801234567890  (several: one per line or comma-separated)" autocomplete="off" spellcheck="false"></textarea>
+      <button class="btn primary" id="btnSearch" data-en="Search">검색</button>
     </div>
     <div class="filters">
       <div class="head">
-        <span>서류 유형</span>
+        <span data-en="Document type">서류 유형</span>
         <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap">
-          <label class="opt"><input type="checkbox" id="exact" checked> 코드 정확히 일치</label>
+          <label class="opt"><input type="checkbox" id="exact" checked> <span data-en="Exact code match">코드 정확히 일치</span></label>
           <button class="textbtn" id="toggleAll">전체 해제</button>
         </div>
       </div>
@@ -467,14 +475,14 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
 <div class="modal" id="rpModal" hidden>
   <div class="mbox" role="dialog" aria-labelledby="rpTitle">
     <div class="mhead">
-      <h2 id="rpTitle">검색 결과 보고서</h2>
-      <button class="mclose" id="rpClose" title="닫기 (Esc)">✕</button>
+      <h2 id="rpTitle" data-en="Search Report">검색 결과 보고서</h2>
+      <button class="mclose" id="rpClose" title="닫기 (Esc)" data-en-title="Close (Esc)">✕</button>
     </div>
     <p class="sub" style="margin-bottom:14px" id="rpHelp"></p>
     <div class="rptools">
       <span class="muted" id="rpStatus"></span>
-      <button class="btn primary" id="rpExcel">엑셀로 저장</button>
-      <button class="btn report" id="rpUpdate" title="공용폴더의 없는서류_현황.xlsx에 이 코드들을 더하고 전체를 최신으로 다시 만들어요">업데이트 하기</button>
+      <button class="btn primary" id="rpExcel" data-en="Save as Excel">엑셀로 저장</button>
+      <button class="btn report" id="rpUpdate" title="공용폴더의 없는서류_현황.xlsx에 이 코드들을 더하고 전체를 최신으로 다시 만들어요" data-en-title="Add these codes to 없는서류_현황.xlsx in the shared folder and rebuild it" data-en="Update shared file">업데이트 하기</button>
     </div>
     <div class="rpwrap"><table class="rp" id="rpTable"></table></div>
   </div>
@@ -504,9 +512,9 @@ const CONFIG = {
   REPORT_FILE: '없는서류_현황.xlsx',
   // 사유 선택지. id는 저장용이라 바꾸지 말고, 이름(label)·색(color: red/orange/gray)만 바꾸세요
   REASONS: [
-    {id:'asked',  label:'문의했으나 없음',  color:'orange'},
-    {id:'notyet', label:'아직 문의 안해봄', color:'red'},
-    {id:'na',     label:'해당 없음',        color:'gray'},
+    {id:'asked',  label:'문의했으나 없음',  en:'Asked – not available', color:'orange'},
+    {id:'notyet', label:'아직 문의 안해봄', en:'Not asked yet',         color:'red'},
+    {id:'na',     label:'해당 없음',        en:'Not applicable',        color:'gray'},
   ],
 };
 
@@ -696,7 +704,7 @@ function goSearch(){ show('#viewSearch'); fitQ(); $('#q').focus(); }
 async function copyText(t){
   try { await navigator.clipboard.writeText(t); }
   catch { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
-  toast('경로를 복사했어요. 탐색기 주소창에 붙여넣으세요');
+  toast(T('경로를 복사했어요. 탐색기 주소창에 붙여넣으세요', 'Path copied. Paste it into the File Explorer address bar'));
 }
 const joinPath = (...p) => p.filter(Boolean).join('\\');
 
@@ -1246,15 +1254,35 @@ function markCands(i){
   box.querySelectorAll('.cand').forEach(b => b.classList.toggle('on', b.textContent.replace(/ \?$/, '') === el.value));
 }
 
+/* ---------- 언어 (파일 찾기 화면·보고서만) ----------
+   한국어 | English 알약 버튼. 화면 글자는 data-en(내용)·data-en-ph(입력 안내)·data-en-title(설명)에 영어를 적어 두고 바꿔 끼움.
+   고른 언어는 이 탭에서만 기억 (브라우저 저장소 안 씀). 공용폴더 누적 엑셀은 늘 한국어 */
+let lang = 'ko';
+const T = (ko, en) => lang === 'en' ? en : ko;
+const TYPE_EN = {1:'Certificate of Origin', 2:'Test Report', 3:'CPC Certificate', 4:'COA', 5:'MSDS · SDS · GMP · HACCP', 6:'KC Certificate', 7:'GMP', 8:'CGMP', 9:'ISO'};
+const typeName = t => T(t.name, TYPE_EN[t.id] || t.name);
+const reasonLabel = def => def ? T(def.label, def.en || def.label) : '';
+function setLang(l){
+  lang = l;
+  document.querySelectorAll('.langpill button').forEach(b => b.classList.toggle('on', b.dataset.lang === l));
+  document.querySelectorAll('[data-en]').forEach(el => { if (el.dataset.ko === undefined) el.dataset.ko = el.innerHTML; el.innerHTML = l === 'en' ? el.dataset.en : el.dataset.ko; });
+  document.querySelectorAll('[data-en-ph]').forEach(el => { if (el.dataset.koPh === undefined) el.dataset.koPh = el.placeholder; el.placeholder = l === 'en' ? el.dataset.enPh : el.dataset.koPh; });
+  document.querySelectorAll('[data-en-title]').forEach(el => { if (el.dataset.koTitle === undefined) el.dataset.koTitle = el.title; el.title = l === 'en' ? el.dataset.enTitle : el.dataset.koTitle; });
+  const on = new Set([...$('#chips').querySelectorAll('input:checked')].map(c => +c.value));
+  renderChips(); $('#chips').querySelectorAll('input').forEach(c => c.checked = on.has(+c.value)); syncToggleAll();
+  if (lastCodes.length){ renderMeta(); renderResults(); }
+  if (!$('#rpModal').hidden) renderReport();
+}
+
 /* ---------- 찾기 ---------- */
 function renderChips(){
   $('#chips').innerHTML = TYPES.map(t => `
-    <label class="chip"><input type="checkbox" value="${t.id}" checked><span>${t.id}. ${esc(t.name)}</span></label>`).join('');
+    <label class="chip"><input type="checkbox" value="${t.id}" checked><span>${t.id}. ${esc(typeName(t))}</span></label>`).join('');
   $('#chips').querySelectorAll('input').forEach(c => c.onchange = () => { syncToggleAll(); applyFilter(); });
 }
 function syncToggleAll(){
   const all = [...$('#chips').querySelectorAll('input')].every(c => c.checked);
-  $('#toggleAll').textContent = all ? '전체 해제' : '전체 선택';
+  $('#toggleAll').textContent = all ? T('전체 해제', 'Clear all') : T('전체 선택', 'Select all');
 }
 async function* walk(dir, prefix=''){
   for await (const [name, h] of dir.entries()){
@@ -1292,12 +1320,12 @@ let matchedAll = [];      // 서류 유형 필터 전 결과 (보고서용)
 const selected = new Set();   // 체크한 파일 (rel)
 async function search(){
   const codes = splitCodes($('#q').value);
-  if (!codes.length){ toast('제품코드를 입력해주세요'); return; }
+  if (!codes.length){ toast(T('제품코드를 입력해주세요', 'Please enter a product code')); return; }
   if (!(await ensureRoot())) return;
   const my = ++searchToken;
   scanList = []; lastCodes = []; found = []; matchedAll = []; selected.clear();
   $('#results').innerHTML = '';
-  $('#meta').textContent = '검색 중…';
+  $('#meta').textContent = T('검색 중…', 'Searching…');
   const extraMap = {}, extraPrefix = CONFIG.EXTRA_DIR + '\\';
   for await (const item of walk(root)){
     if (my !== searchToken) return;
@@ -1308,7 +1336,7 @@ async function search(){
     }
     const folderType = item.rel.includes('\\') ? TYPES.find(t => t.folder === item.rel.split('\\')[0]) || null : null;
     scanList.push({...item, folderType, type: typeOfFile(item.name, folderType), path: joinPath(CONFIG.BASE_UNC, item.rel)});
-    if (scanList.length % 200 === 0) $('#meta').textContent = `검색 중… ${scanList.length}개 확인`;
+    if (scanList.length % 200 === 0) $('#meta').textContent = T(`검색 중… ${scanList.length}개 확인`, `Searching… ${scanList.length} files checked`);
   }
   if (my !== searchToken) return;
   if (cloudOn()){   // 클라우드의 추가 제품코드 (예전 txt와 합침)
@@ -1351,49 +1379,53 @@ async function applyFilter(){
   list.sort((a,b) => order(a.hits[0]) - order(b.hits[0]) || (a.type?.id ?? 99) - (b.type?.id ?? 99) || a.name.localeCompare(b.name));
   found = list; matchedCount = matched.length; matchedAll = matched;
   [...selected].forEach(k => { if (!found.some(r => r.rel === k)) selected.delete(k); });
-  const label = lastCodes.length === 1 ? `"${lastCodes[0]}"` : `코드 ${lastCodes.length}개`;
-  const hidden = matched.length - found.length;
-  $('#meta').textContent = `${label} 검색 결과 ${found.length}건 · 파일 ${scanList.length}개 확인` +
-    (hidden ? ` · 서류 유형 필터로 ${hidden}건 숨김` : '');
+  renderMeta();
   renderResults();
+}
+function renderMeta(){
+  const label = lastCodes.length === 1 ? `"${lastCodes[0]}"` : T(`코드 ${lastCodes.length}개`, `${lastCodes.length} codes`);
+  const hidden = matchedCount - found.length;
+  $('#meta').textContent = T(`${label} 검색 결과 ${found.length}건 · 파일 ${scanList.length}개 확인`, `${label}: ${found.length} result${found.length === 1 ? '' : 's'} · ${scanList.length} files checked`) +
+    (hidden ? T(` · 서류 유형 필터로 ${hidden}건 숨김`, ` · ${hidden} hidden by document type filter`) : '');
 }
 function renderResults(){
   const multi = lastCodes.length > 1;
   const missing = multi ? lastCodes.filter(c => !found.some(r => r.hits.includes(c))) : [];
-  const miss = missing.length ? `<div class="missing">못 찾은 코드 ${missing.length}개: ${missing.map(esc).join(', ')}
-      <button class="textbtn" id="copyMissing">복사</button></div>` : '';
+  const miss = missing.length ? `<div class="missing">${T(`못 찾은 코드 ${missing.length}개`, `Codes not found (${missing.length})`)}: ${missing.map(esc).join(', ')}
+      <button class="textbtn" id="copyMissing">${T('복사', 'Copy')}</button></div>` : '';
   if (!found.length){
     $('#results').innerHTML = miss + `<div class="empty">${matchedCount
-      ? '찾은 파일이 있지만 서류 유형 필터로 모두 숨겨졌어요. 위에서 서류 유형을 선택해주세요.'
-      : '찾은 파일이 없어요. "코드 정확히 일치"를 끄고 다시 검색해보세요.'}</div>`;
+      ? T('찾은 파일이 있지만 서류 유형 필터로 모두 숨겨졌어요. 위에서 서류 유형을 선택해주세요.', 'Files were found but all are hidden by the document type filter. Select document types above.')
+      : T('찾은 파일이 없어요. "코드 정확히 일치"를 끄고 다시 검색해보세요.', 'No files found. Try turning off "Exact code match" and search again.')}</div>`;
     bindMissing(missing);
     return;
   }
   const allChecked = found.every(r => selected.has(r.rel));
   $('#results').innerHTML = miss + `
     <div class="bulkbar">
-      <span><b id="selCount">${selected.size}</b>개 선택</span>
+      <span>${T(`<b id="selCount">${selected.size}</b>개 선택`, `<b id="selCount">${selected.size}</b> selected`)}</span>
       <div class="rowbtns">
-        <button class="btn small" id="btnDlFolder" ${selected.size ? '' : 'disabled'}>선택 파일 폴더에 저장</button>
-        <button class="btn small primary" id="btnDlZip" ${selected.size ? '' : 'disabled'}>선택 파일 ZIP으로 받기</button>
+        <button class="btn small" id="btnListXlsx" title="${T('지금 보이는 결과 목록 (유형 · 파일명 · 검색어)', 'The results shown (type · file name · search code)')}">${T('목록 엑셀로 받기', 'Download list (Excel)')}</button>
+        <button class="btn small" id="btnDlFolder" ${selected.size ? '' : 'disabled'}>${T('선택 파일 폴더에 저장', 'Save selected to folder')}</button>
+        <button class="btn small primary" id="btnDlZip" ${selected.size ? '' : 'disabled'}>${T('선택 파일 ZIP으로 받기', 'Download selected (ZIP)')}</button>
       </div>
     </div>
     <table>
-    <thead><tr><th class="ck"><input type="checkbox" id="ckAll" title="전체 선택" ${allChecked ? 'checked' : ''}></th>
-      <th>유형</th><th>파일명</th>${multi ? '<th>검색어</th>' : ''}<th class="hide-sm">수정일</th><th class="hide-sm">크기</th><th>링크</th></tr></thead>
+    <thead><tr><th class="ck"><input type="checkbox" id="ckAll" title="${T('전체 선택', 'Select all')}" ${allChecked ? 'checked' : ''}></th>
+      <th>${T('유형', 'Type')}</th><th>${T('파일명', 'File name')}</th>${multi ? `<th>${T('검색어', 'Search code')}</th>` : ''}<th class="hide-sm">${T('수정일', 'Modified')}</th><th class="hide-sm">${T('크기', 'Size')}</th><th>${T('링크', 'Link')}</th></tr></thead>
     <tbody>${found.map((r,i) => `
       <tr>
         <td class="ck"><input type="checkbox" data-ck="${i}" ${selected.has(r.rel) ? 'checked' : ''}></td>
-        <td><span class="badge">${r.type ? `${r.type.id}. ${esc(r.type.name)}` : '기타'}</span>
-          ${r.type && r.type !== r.folderType ? `<span class="misfiled" title="파일명의 서류유형과 저장된 폴더가 달라요">⚠ ${esc(r.rel.includes('\\') ? r.rel.split('\\')[0] : '최상위')} 폴더에 있음</span>` : ''}</td>
-        <td><button class="link" data-open="${i}" title="새 탭에서 열기">${esc(r.name)}</button>
-          ${r.byExtra.length ? `<span class="incl">포함된 제품코드: ${r.extra.map(x => r.byExtra.some(c => c.toLowerCase() === x.toLowerCase()) ? `<b>${esc(x)}</b>` : esc(x)).join(', ')}</span>` : ''}</td>
+        <td><span class="badge">${r.type ? `${r.type.id}. ${esc(typeName(r.type))}` : T('기타', 'Other')}</span>
+          ${r.type && r.type !== r.folderType ? `<span class="misfiled" title="${T('파일명의 서류유형과 저장된 폴더가 달라요', 'The document type in the file name does not match its folder')}">⚠ ${T(`${esc(r.rel.includes('\\') ? r.rel.split('\\')[0] : '최상위')} 폴더에 있음`, `in ${esc(r.rel.includes('\\') ? r.rel.split('\\')[0] : 'top')} folder`)}</span>` : ''}</td>
+        <td><button class="link" data-open="${i}" title="${T('새 탭에서 열기', 'Open in new tab')}">${esc(r.name)}</button>
+          ${r.byExtra.length ? `<span class="incl">${T('포함된 제품코드', 'Also covers')}: ${r.extra.map(x => r.byExtra.some(c => c.toLowerCase() === x.toLowerCase()) ? `<b>${esc(x)}</b>` : esc(x)).join(', ')}</span>` : ''}</td>
         ${multi ? `<td><div class="hits">${r.hits.map(h => `<span>${esc(h)}</span>`).join('')}</div></td>` : ''}
         <td class="hide-sm nowrap muted">${r.file ? fmtDate(r.file.lastModified) : '-'}</td>
         <td class="hide-sm nowrap muted">${r.file ? fmtSize(r.file.size) : '-'}</td>
         <td><div class="rowbtns">
-          <button class="btn small" data-copy="${i}" title="${esc(r.path)}">경로 복사</button>
-          <button class="btn small" data-copydir="${i}">폴더 복사</button>
+          <button class="btn small" data-copy="${i}" title="${esc(r.path)}">${T('경로 복사', 'Copy path')}</button>
+          <button class="btn small" data-copydir="${i}">${T('폴더 복사', 'Copy folder')}</button>
         </div></td>
       </tr>`).join('')}</tbody></table>`;
   bindMissing(missing);
@@ -1411,6 +1443,7 @@ function renderResults(){
     const k = found[+c.dataset.ck].rel; c.checked ? selected.add(k) : selected.delete(k); syncSel();
   });
   $('#btnDlZip').onclick = downloadZip;
+  $('#btnListXlsx').onclick = downloadList;
   $('#btnDlFolder').onclick = downloadToFolder;
   $('#results').querySelectorAll('[data-open]').forEach(b => b.onclick = () => openFile(found[+b.dataset.open]));
   $('#results').querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copyText(found[+b.dataset.copy].path));
@@ -1421,8 +1454,8 @@ function renderResults(){
 function bindMissing(missing){
   const b = $('#copyMissing'); if (!b) return;
   b.onclick = async () => {
-    try { await navigator.clipboard.writeText(missing.join('\n')); toast('못 찾은 코드를 복사했어요'); }
-    catch { toast('복사하지 못했어요'); }
+    try { await navigator.clipboard.writeText(missing.join('\n')); toast(T('못 찾은 코드를 복사했어요', 'Copied the codes not found')); }
+    catch { toast(T('복사하지 못했어요', 'Could not copy')); }
   };
 }
 async function openFile(r){
@@ -1434,7 +1467,7 @@ async function openFile(r){
     setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
   }catch(e){
     if (win) win.close();
-    toast('파일을 열 수 없어요: ' + e.message);
+    toast(T('파일을 열 수 없어요: ', 'Could not open the file: ') + e.message);
   }
 }
 
@@ -1482,9 +1515,9 @@ function watchReasons(codes){
 }
 function stopReasons(){ rpUnsubs.forEach(u => u()); rpUnsubs = []; }
 async function openReport(){
-  if (!lastCodes.length){ toast('먼저 검색해 주세요'); return; }
+  if (!lastCodes.length){ toast(T('먼저 검색해 주세요', 'Please search first')); return; }
   $('#rpModal').hidden = false;
-  $('#rpTable').innerHTML = '<tbody><tr><td style="padding:30px">불러오는 중…</td></tr></tbody>';
+  $('#rpTable').innerHTML = `<tbody><tr><td style="padding:30px">${T('불러오는 중…', 'Loading…')}</td></tr></tbody>`;
   for (const it of matchedAll){
     if (it.file === undefined){ try { it.file = await it.handle.getFile(); } catch { it.file = null; } }
   }
@@ -1496,25 +1529,25 @@ function renderReport(){
   const cloud = cloudOn(), edit = canEdit();
   $('#rpUpdate').hidden = !edit;
   $('#rpHelp').textContent = cloud
-    ? (edit ? '빨간 칸은 파일이 없는 서류예요. 사유를 고르면 클라우드에 바로 저장돼서 다른 사람도 볼 수 있어요. ✎로 메모도 남길 수 있어요.'
-            : '빨간 칸은 파일이 없는 서류예요. 보기 권한이라 사유는 볼 수만 있어요.')
-    : '빨간 칸은 파일이 없는 서류예요. 로그인하면 없는 이유(사유)를 보고 고를 수 있어요.';
-  const opts = CONFIG.REASONS.map(r => `<option value="${r.id}">${esc(r.label)}</option>`).join('');
+    ? (edit ? T('빨간 칸은 파일이 없는 서류예요. 사유를 고르면 클라우드에 바로 저장돼서 다른 사람도 볼 수 있어요. ✎로 메모도 남길 수 있어요.', 'Red cells are missing documents. Pick a reason and it is saved for everyone right away. Use ✎ to add a note.')
+            : T('빨간 칸은 파일이 없는 서류예요. 보기 권한이라 사유는 볼 수만 있어요.', 'Red cells are missing documents. With view access you can only see the reasons.'))
+    : T('빨간 칸은 파일이 없는 서류예요. 로그인하면 없는 이유(사유)를 보고 고를 수 있어요.', 'Red cells are missing documents. Log in to see and choose reasons.');
+  const opts = CONFIG.REASONS.map(r => `<option value="${r.id}">${esc(reasonLabel(r))}</option>`).join('');
   let missingAll = 0, noReason = 0;
   $('#rpTable').innerHTML = `<colgroup><col class="c0">${TYPES.map(() => '<col>').join('')}<col class="cn"></colgroup>
-    <thead><tr><th>코드</th>${TYPES.map(t => `<th title="${esc(t.name)}">${t.id}. ${esc(t.name)}</th>`).join('')}<th>없는 서류</th></tr></thead>
+    <thead><tr><th>${T('코드', 'Code')}</th>${TYPES.map(t => `<th title="${esc(typeName(t))}">${t.id}. ${esc(typeName(t))}</th>`).join('')}<th>${T('없는 서류', 'Missing')}</th></tr></thead>
     <tbody>${lastCodes.map((code, ci) => {
       const counts = countsOf(code);
       const cells = TYPES.map((t, ti) => {
         if (counts[ti]) return `<td class="has">${counts[ti]}</td>`;
         missingAll++;
-        if (!cloud) return `<td class="miss">없음</td>`;
+        if (!cloud) return `<td class="miss">${T('없음', 'Missing')}</td>`;
         const r = reasons[code]?.[t.id] || {}, def = reasonOf(r.reason);
         if (!def) noReason++;
         const meta = [r.memo, (r.by || r.at) ? [byOf(r), r.at].filter(Boolean).join(' ') : ''].filter(Boolean).map(esc).join('<br>');
         const ctl = edit
-          ? `<div class="rsel"><select data-c="${ci}" data-t="${t.id}" title="없음 · 사유를 골라 주세요"><option value="">사유 선택</option>${opts}</select><button class="memo" data-c="${ci}" data-t="${t.id}" title="메모">✎</button></div>`
-          : `<b>${esc(def ? def.label : '없음')}</b>`;
+          ? `<div class="rsel"><select data-c="${ci}" data-t="${t.id}" title="${T('없음 · 사유를 골라 주세요', 'Missing · choose a reason')}"><option value="">${T('사유 선택', 'Reason')}</option>${opts}</select><button class="memo" data-c="${ci}" data-t="${t.id}" title="${T('메모', 'Note')}">✎</button></div>`
+          : `<b>${esc(def ? reasonLabel(def) : T('없음', 'Missing'))}</b>`;
         return `<td class="miss ${def ? def.color : ''}">${ctl}${meta ? `<div class="rmeta">${meta}</div>` : ''}</td>`;
       }).join('');
       const miss = counts.filter(n => !n).length;
@@ -1526,28 +1559,28 @@ function renderReport(){
   });
   $('#rpTable').querySelectorAll('.memo').forEach(b => b.onclick = () => {
     const code = lastCodes[+b.dataset.c], cur = reasons[code]?.[b.dataset.t]?.memo || '';
-    const memo = prompt(`${code} · ${b.dataset.t}. ${TYPES.find(t => t.id === +b.dataset.t).name}\n메모 (비우면 지움)`, cur);
+    const memo = prompt(`${code} · ${b.dataset.t}. ${typeName(TYPES.find(t => t.id === +b.dataset.t))}\n${T('메모 (비우면 지움)', 'Note (leave empty to remove)')}`, cur);
     if (memo !== null) setReason(code, b.dataset.t, {memo: memo.trim()});
   });
-  $('#rpStatus').textContent = `코드 ${lastCodes.length}개 · 없는 서류 ${missingAll}칸` + (cloud && noReason ? ` · 사유 미입력 ${noReason}칸` : '');
+  $('#rpStatus').textContent = T(`코드 ${lastCodes.length}개 · 없는 서류 ${missingAll}칸`, `${lastCodes.length} codes · ${missingAll} missing`) + (cloud && noReason ? T(` · 사유 미입력 ${noReason}칸`, ` · ${noReason} without reason`) : '');
 }
 /* 그 칸(서류 하나)만 바꾼다 (merge) — 다른 사람이 같은 코드의 다른 칸을 고쳐도 덮어쓰지 않음 */
 async function setReason(code, typeId, patch){
-  if (!canEdit()){ toast('사유를 고칠 권한이 없어요'); return; }
+  if (!canEdit()){ toast(T('사유를 고칠 권한이 없어요', 'You do not have permission to edit reasons')); return; }
   const cur = {...(reasons[code]?.[typeId] || {}), ...patch};
   const FV = firebase.firestore.FieldValue;
   const cell = (!cur.reason && !cur.memo) ? FV.delete()
     : {reason: cur.reason || '', memo: cur.memo || '', by: me, byName: myName(), at: fmtDate(Date.now())};
-  try { await db.collection('exReasons').doc(docKey(code)).set({code, items: {[typeId]: cell}}, {merge: true}); toast('저장했어요'); }
-  catch(e){ toast('사유 저장 실패: ' + (fbErr(e))); }
+  try { await db.collection('exReasons').doc(docKey(code)).set({code, items: {[typeId]: cell}}, {merge: true}); toast(T('저장했어요', 'Saved')); }
+  catch(e){ toast(T('사유 저장 실패: ', 'Could not save: ') + (fbErr(e))); }
 }
 function downloadReport(){
   const url = URL.createObjectURL(buildReport(lastCodes, null, cloudOn() ? reasons : {}));
   const a = document.createElement('a');
-  a.href = url; a.download = `검색결과보고서_${fmtDate(Date.now()).replaceAll('-', '')}_코드${lastCodes.length}개.xlsx`;
+  a.href = url; a.download = T(`검색결과보고서_${fmtDate(Date.now()).replaceAll('-', '')}_코드${lastCodes.length}개.xlsx`, `SearchReport_${fmtDate(Date.now()).replaceAll('-', '')}_${lastCodes.length}codes.xlsx`);
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
-  toast('검색 결과 보고서를 받았어요');
+  toast(T('검색 결과 보고서를 받았어요', 'Search report downloaded'));
 }
 /* 공용폴더의 누적 엑셀을 다시 만든다: (예전에 업데이트한 코드 + 지금 코드) × 최신 파일·사유.
    코드 목록은 클라우드 exMeta/report 의 codes (엑셀을 읽지 않아도 되게).
@@ -1565,12 +1598,14 @@ async function updateSharedReport(){
       if (it.file === undefined){ try { it.file = await it.handle.getFile(); } catch { it.file = null; } }
     }
     const now = new Date(), stamp = `${fmtDate(now)} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-    const blob = buildReport(codes, [
+    const was = lang; lang = 'ko';   // 공용폴더 누적 엑셀은 늘 한국어
+    let blob;
+    try { blob = buildReport(codes, [
       ['이 파일은 Export Document Archiving 사이트의 검색 결과 보고서 → \'업데이트 하기\'로 자동으로 다시 만들어져요.'],
       ['여기서 직접 고친 내용은 다음 업데이트 때 사라져요. 없는 서류 사유는 사이트 보고서에서 골라 주세요.'],
       ['마지막 업데이트: ' + stamp + ' · ' + myName()],
       [`코드 ${codes.length}개`],
-    ], rmap);
+    ], rmap); } finally { lang = was; }
     try{
       const w = await (await root.getFileHandle(CONFIG.REPORT_FILE, {create:true})).createWritable();
       await w.write(blob); await w.close();
@@ -1584,14 +1619,14 @@ async function updateSharedReport(){
   finally{ btn.disabled = false; btn.textContent = old; }
 }
 function buildReport(codes, notes, rmap){
-  const head = ['코드', ...TYPES.map(t => `${t.id}. ${t.name}`), '없는 서류 수'];
+  const head = [T('코드', 'Code'), ...TYPES.map(t => `${t.id}. ${typeName(t)}`), T('없는 서류 수', 'Missing count')];
   const style = {orange:7, gray:8, red:3};
   const rows = codes.map(code => {
     const counts = countsOf(code);
     return [{v:code, s:5}, ...counts.map((n, ti) => {
       if (n) return {v:n, s:2};
       const def = reasonOf(rmap[code]?.[TYPES[ti].id]?.reason);
-      return def ? {v:def.label, s:style[def.color] || 3} : {v:'없음', s:3};
+      return def ? {v:reasonLabel(def), s:style[def.color] || 3} : {v:T('없음', 'Missing'), s:3};
     }), {v:counts.filter(n => !n).length, s:counts.some(n => !n) ? 6 : 2}];
   });
   const why = [];
@@ -1599,21 +1634,21 @@ function buildReport(codes, notes, rmap){
     const counts = countsOf(code);
     TYPES.forEach((t, ti) => {
       const r = rmap[code]?.[t.id];
-      if (!counts[ti] && r) why.push([{v:code, s:4}, {v:`${t.id}. ${t.name}`, s:4}, {v:reasonOf(r.reason)?.label || '', s:4},
+      if (!counts[ti] && r) why.push([{v:code, s:4}, {v:`${t.id}. ${typeName(t)}`, s:4}, {v:reasonLabel(reasonOf(r.reason)), s:4},
         {v:r.memo || '', s:4}, {v:byOf(r), s:4}, {v:r.at || '', s:4}]);
     });
   }
   const list = [];
   for (const code of codes) for (const r of filesOf(code)) list.push([
-    {v:code, s:4}, {v:r.type ? `${r.type.id}. ${r.type.name}` : '기타', s:4}, {v:r.name, s:4}, {v:r.path, s:4},
+    {v:code, s:4}, {v:r.type ? `${r.type.id}. ${typeName(r.type)}` : T('기타', 'Other'), s:4}, {v:r.name, s:4}, {v:r.path, s:4},
     {v:r.file ? fmtDate(r.file.lastModified) : '', s:4},
-    {v:r.type && r.type !== r.folderType ? (r.rel.includes('\\') ? r.rel.split('\\')[0] : '최상위') + ' 폴더에 있음' : '', s:4},
+    {v:r.type && r.type !== r.folderType ? T((r.rel.includes('\\') ? r.rel.split('\\')[0] : '최상위') + ' 폴더에 있음', 'in ' + (r.rel.includes('\\') ? r.rel.split('\\')[0] : 'top') + ' folder') : '', s:4},
     {v:r.extra.join(', '), s:4},
   ]);
   const xlsx = makeXlsx([
-    {name:'검색 결과', head, rows, widths:[18, ...TYPES.map(() => 16), 12], freeze:true},
-    {name:'파일 목록', head:['코드','유형','파일명','경로','수정일','폴더 확인','포함된 제품코드'], rows:list, widths:[18,24,48,70,12,22,30], freeze:true, filter:true},
-    {name:'없는 서류 사유', head:['코드','서류','사유','메모','작성자','날짜'], rows:why, widths:[18,28,18,40,12,12], freeze:true, filter:true},
+    {name:T('검색 결과', 'Results'), head, rows, widths:[18, ...TYPES.map(() => 16), 12], freeze:true},
+    {name:T('파일 목록', 'Files'), head:lang === 'en' ? ['Code','Type','File name','Path','Modified','Folder check','Also covers'] : ['코드','유형','파일명','경로','수정일','폴더 확인','포함된 제품코드'], rows:list, widths:[18,24,48,70,12,22,30], freeze:true, filter:true},
+    {name:T('없는 서류 사유', 'Reasons'), head:lang === 'en' ? ['Code','Document','Reason','Note','By','Date'] : ['코드','서류','사유','메모','작성자','날짜'], rows:why, widths:[18,28,18,40,12,12], freeze:true, filter:true},
     ...(notes ? [{name:'안내', head:['안내'], rows:notes.map(r => r.map(v => ({v, s:4}))), widths:[110]}] : []),
   ]);
   return xlsx;
@@ -1684,19 +1719,33 @@ ${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="${ns}/officeDocumen
     {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
 }
 
+/* 결과 목록 엑셀: 지금 보이는 결과(서류 유형 필터 반영)를 유형 · 파일명 · 검색어로 */
+function downloadList(){
+  if (!found.length) return;
+  const rows = found.map(r => [
+    {v: r.type ? `${r.type.id}. ${typeName(r.type)}` : T('기타', 'Other'), s:4}, {v: r.name, s:4}, {v: r.hits.join(', '), s:4}]);
+  const url = URL.createObjectURL(makeXlsx([{name: T('검색 결과', 'Results'), head: [T('유형', 'Type'), T('파일명', 'File name'), T('검색어', 'Search code')],
+    rows, widths: [28, 60, 30], freeze: false, filter: true}]));
+  const a = document.createElement('a');
+  a.href = url; a.download = T(`파일찾기_목록_${fmtDate(Date.now()).replaceAll('-', '')}_${found.length}건.xlsx`, `FileList_${fmtDate(Date.now()).replaceAll('-', '')}_${found.length}.xlsx`);
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+  toast(T(`목록 ${found.length}건을 엑셀로 받았어요`, `Downloaded the list of ${found.length} files`));
+}
+
 /* ---------- 일괄 다운로드 ---------- */
 const selectedRows = () => found.filter(r => selected.has(r.rel));
 async function busy(btn, text, fn){
   const old = btn.textContent; btn.disabled = true; btn.textContent = text;
-  try { await fn(); } catch(e){ if (e.name !== 'AbortError') toast('받기 실패: ' + e.message); }
+  try { await fn(); } catch(e){ if (e.name !== 'AbortError') toast(T('받기 실패: ', 'Download failed: ') + e.message); }
   finally { btn.textContent = old; btn.disabled = !selected.size; }
 }
 /* ZIP: 공용폴더와 같은 폴더 구조로 담는다 (압축 없이 묶기만 — PDF는 어차피 잘 안 줄어듦) */
 function downloadZip(){
   const rows = selectedRows(); if (!rows.length) return;
   const total = rows.reduce((s,r) => s + (r.file ? r.file.size : 0), 0);
-  if (total > 2 * 1024 ** 3){ toast('한 번에 2GB까지 받을 수 있어요. 나눠서 받아주세요'); return; }
-  return busy($('#btnDlZip'), 'ZIP 만드는 중…', async () => {
+  if (total > 2 * 1024 ** 3){ toast(T('한 번에 2GB까지 받을 수 있어요. 나눠서 받아주세요', 'Up to 2GB at a time. Please download in parts')); return; }
+  return busy($('#btnDlZip'), T('ZIP 만드는 중…', 'Making ZIP…'), async () => {
     const entries = [];
     for (const r of rows){
       const file = await r.handle.getFile();
@@ -1704,17 +1753,17 @@ function downloadZip(){
     }
     const url = URL.createObjectURL(makeZip(entries));
     const a = document.createElement('a');
-    a.href = url; a.download = `수출서류_${fmtDate(Date.now()).replaceAll('-', '')}_${rows.length}개.zip`;
+    a.href = url; a.download = T(`수출서류_${fmtDate(Date.now()).replaceAll('-', '')}_${rows.length}개.zip`, `ExportDocs_${fmtDate(Date.now()).replaceAll('-', '')}_${rows.length}files.zip`);
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
-    toast(`${rows.length}개 파일을 ZIP으로 받았어요`);
+    toast(T(`${rows.length}개 파일을 ZIP으로 받았어요`, `Downloaded ${rows.length} files as ZIP`));
   });
 }
 /* 폴더에 저장: 고른 폴더에 파일을 그대로 복사 (같은 이름이 있으면 뒤에 (2) 붙임) */
 function downloadToFolder(){
   const rows = selectedRows(); if (!rows.length) return;
   if (!('showDirectoryPicker' in window)){ toast('크롬 또는 엣지에서 열어주세요'); return; }
-  return busy($('#btnDlFolder'), '저장 중…', async () => {
+  return busy($('#btnDlFolder'), T('저장 중…', 'Saving…'), async () => {
     const dest = await window.showDirectoryPicker({id:'artbox-export-download', mode:'readwrite'});
     let n = 0;
     for (const r of rows){
@@ -1723,7 +1772,7 @@ function downloadToFolder(){
       const w = await (await dest.getFileHandle(name, {create:true})).createWritable();
       await w.write(file); await w.close(); n++;
     }
-    toast(`"${dest.name}" 폴더에 ${n}개 파일을 저장했어요`);
+    toast(T(`"${dest.name}" 폴더에 ${n}개 파일을 저장했어요`, `Saved ${n} files to "${dest.name}"`));
   });
 }
 async function freeName(dir, name){
@@ -2029,6 +2078,7 @@ $('#btnCopyDone').onclick = () => copyText(lastSavedPath);
 $('#btnSameType').onclick = () => openForm(curType.id);
 $('#btnSearch').onclick = search;
 $('#btnReport').onclick = openReport;
+document.querySelectorAll('.langpill button').forEach(b => b.onclick = () => setLang(b.dataset.lang));
 $('#rpClose').onclick = closeReport;
 $('#rpModal').onclick = e => { if (e.target.id === 'rpModal') closeReport(); };
 $('#rpExcel').onclick = downloadReport;
