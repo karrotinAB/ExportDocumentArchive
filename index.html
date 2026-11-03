@@ -1264,7 +1264,7 @@ function markCands(i){
    고른 언어는 이 탭에서만 기억 (브라우저 저장소 안 씀). 공용폴더 누적 엑셀은 늘 한국어 */
 let lang = 'ko';
 const T = (ko, en) => lang === 'en' ? en : ko;
-const TYPE_EN = {1:'Certificate of Origin', 2:'Test Report', 3:'CPC Certificate', 4:'COA', 5:'MSDS · SDS · GMP · HACCP', 6:'KC Certificate', 7:'GMP', 8:'CGMP', 9:'ISO'};
+const TYPE_EN = {1:'Certificate of Origin', 2:'CPC TEST', 3:'CPC Certificate', 4:'COA', 5:'MSDS · SDS · GMP · HACCP', 6:'KC Certificate', 7:'GMP', 8:'CGMP', 9:'ISO'};
 const typeName = t => T(t.name, TYPE_EN[t.id] || t.name);
 const reasonLabel = def => def ? T(def.label, def.en || def.label) : '';
 function setLang(l){
