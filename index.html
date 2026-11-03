@@ -247,11 +247,11 @@ table.rp td.cnt{font-weight:700; color:#9c0006}
 .loginlink{background:none; border:none; padding:0; color:var(--muted); font-size:13px; text-decoration:underline; text-underline-offset:3px; cursor:pointer; text-align:center}
 .loginview{overflow:hidden}
 /* 로그인 화면 캐릭터: 왼쪽 아래 외계인, 오른쪽 아래 별 (화면 모서리에 붙여서 그림의 잘린 가장자리가 안 보이게) */
-.loginchar{position:absolute; bottom:0; width:auto; z-index:0; user-select:none; -webkit-user-drag:none; pointer-events:none}
-.loginchar.l{left:0; height:min(36vh, 336px)}
-.loginchar.r{right:0; height:min(22vh, 180px)}
+.loginchar{position:absolute; bottom:0; max-width:40vw; object-fit:contain; object-position:bottom; width:auto; z-index:0; user-select:none; -webkit-user-drag:none; pointer-events:none}
+.loginchar.l{left:0; height:min(52vh, 480px)}
+.loginchar.r{right:0; height:min(46vh, 420px)}
 .logincard{position:relative; z-index:1}
-@media (max-width:760px){ .loginchar{opacity:.35} .loginchar.l{height:20vh} .loginchar.r{height:12vh} }
+@media (max-width:760px){ .loginchar{opacity:.35} .loginchar.l{height:24vh} .loginchar.r{height:20vh} }
 /* 모든 화면 바닥 가운데 저작권 (인쇄에는 안 나옴) */
 .copyright{position:fixed; left:0; right:0; bottom:3px; z-index:45; text-align:center; font-size:11px; color:#8a8a8a; letter-spacing:.02em; pointer-events:none}
 body:has(#loginView:not([hidden])) .copyright{color:rgba(255,255,255,.75)}
@@ -437,8 +437,8 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
 
 <!-- 로그인 -->
 <div class="loginview" id="loginView">
-  <img class="loginchar l" id="loginCharL" alt="" aria-hidden="true">
-  <img class="loginchar r" id="loginCharR" alt="" aria-hidden="true">
+  <img class="loginchar l" src="img/login-alien.webp" alt="" aria-hidden="true">
+  <img class="loginchar r" src="img/login-star.webp" alt="" aria-hidden="true">
   <form class="logincard" id="loginForm">
     <div class="loginbrand">ARTBOX <b>Export Document Archiving</b></div>
     <div id="loginFields">
@@ -2054,9 +2054,6 @@ window.addEventListener('drop', e => e.preventDefault());
 
 renderTypes();
 renderChips();
-// 로그인 화면 양옆 캐릭터: 머리글에 있는 그림(외계인·별)을 그대로 씀
-$('#loginCharL').src = $('header .chars img.alien').src;
-$('#loginCharR').src = $('header .chars img.star').src;
 initFirebase();
 if (!('showDirectoryPicker' in window)){
   const w = $('#pathWarn'); w.hidden = false;
