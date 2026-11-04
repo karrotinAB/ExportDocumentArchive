@@ -282,6 +282,14 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
 .rnold{font-size:13px; color:var(--muted); margin-top:10px; word-break:break-all}
 .rnold code{font-family:ui-monospace,Consolas,monospace; color:var(--text)}
 .rnbox .field select, .rnbox .field input{width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:#fff}
+.renamecard{display:flex; flex-direction:column; gap:4px; width:100%; margin-top:22px; padding:18px 22px; border:1.5px dashed #c9c9c9; border-radius:var(--radius); background:#fff; cursor:pointer; text-align:left; font:inherit; transition:.15s}
+.renamecard:hover{border-color:var(--brand); background:var(--brand-soft)}
+.renamecard b{font-size:15px}
+.renamecard span{font-size:13px; color:var(--muted)}
+.rvbar{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+.rvbar select, .rvbar input:not([type=checkbox]){padding:9px 12px; border:1px solid var(--border); border-radius:10px; background:#fff}
+.rvbar #rvQ{flex:1; min-width:200px}
+.warnc{color:#9a5b0b}
 [hidden]{display:none !important}
 </style>
 </head>
@@ -340,6 +348,25 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
     <h1>어떤 서류인가요?</h1>
     <p class="sub">유형에 따라 저장 폴더와 파일명 규칙이 정해집니다.</p>
     <div class="tiles" id="typeGrid"></div>
+    <button class="renamecard" id="goRename" hidden>
+      <b>✏️ 업로드된 파일 이름 바꾸기</b>
+      <span>이미 공용폴더에 있는 파일의 이름을 서류 유형 규칙대로 고쳐요. 규칙과 다른 파일을 찾아서 보여 줘요.</span>
+    </button>
+  </section>
+
+  <!-- 업로드: 업로드된 파일 이름 바꾸기 -->
+  <section id="viewRename" hidden>
+    <button class="back" id="rvBack">← 서류 유형 선택으로</button>
+    <h1>업로드된 파일 이름 바꾸기</h1>
+    <p class="sub">폴더를 고르면 그 안의 파일이 나와요. 파일명이 서류 유형의 규칙과 다르거나 다른 폴더에 들어가 있으면 ⚠로 표시돼요.<br>
+      '파일명 수정'을 누르면 규칙대로 칸을 채워 새 이름으로 바꾸고, 그 유형 폴더로 옮겨요.</p>
+    <div class="rvbar">
+      <select id="rvFolder"><option value="">전체 폴더</option></select>
+      <input id="rvQ" placeholder="파일명으로 찾기" autocomplete="off">
+      <label class="opt"><input type="checkbox" id="rvBad"> 규칙과 다른 파일만</label>
+    </div>
+    <div class="meta" id="rvMeta"></div>
+    <div id="rvList"></div>
   </section>
 
   <!-- 업로드: 2단계 정보 입력 -->
@@ -713,15 +740,15 @@ function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
 }
-const NAV_OF = {'#viewHome':'home', '#viewType':'upload', '#viewForm':'upload', '#viewDone':'upload', '#viewSearch':'search', '#viewAdmin':'admin'};
+const NAV_OF = {'#viewHome':'home', '#viewType':'upload', '#viewForm':'upload', '#viewDone':'upload', '#viewRename':'upload', '#viewSearch':'search', '#viewAdmin':'admin'};
 function show(id){
   Object.keys(NAV_OF).forEach(v => $(v).hidden = (v !== id));
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('active', b.dataset.nav === NAV_OF[id]));
-  $('#main').classList.toggle('wide', id === '#viewType' || id === '#viewSearch' || id === '#viewForm' || id === '#viewAdmin');
+  $('#main').classList.toggle('wide', id === '#viewType' || id === '#viewSearch' || id === '#viewForm' || id === '#viewAdmin' || id === '#viewRename');
   window.scrollTo(0,0);
 }
 function goHome(){ resetForm(); curType = null; clearSearch(); show('#viewHome'); }
-function goUpload(){ resetForm(); curType = null; show('#viewType'); }
+function goUpload(){ resetForm(); curType = null; $('#goRename').hidden = !canEdit(); show('#viewType'); }
 function goSearch(){ show('#viewSearch'); fitQ(); $('#q').focus(); }
 async function copyText(t){
   try { await navigator.clipboard.writeText(t); }
@@ -1427,8 +1454,9 @@ function startBgScan(){
     if (tok !== scanToken || root !== r0) return;
     scanCache = {root, at: Date.now(), ...res}; saveIndex(scanCache);
     if (tok === scanToken) bgScanning = false;
+    rvRender();
     if (lastCodes.length){ scanList = scanCache.files; applyExtras(); return applyFilter(); }   // 결과를 새 목록으로 다시
-  }).finally(() => { if (tok === scanToken){ bgScanning = false; if (lastCodes.length) renderMeta(); } });
+  }).finally(() => { if (tok === scanToken){ bgScanning = false; if (lastCodes.length) renderMeta(); rvRender(); } });
 }
 function applyExtras(){ scanList.forEach(it => it.extra = lastExtraMap[it.rel.toLowerCase()] || []); }
 async function search(force){
@@ -1968,6 +1996,7 @@ async function doRename(e){
     if (lastExtraMap[ok]){ lastExtraMap[nk] = lastExtraMap[ok]; if (removed) delete lastExtraMap[ok]; }
     selected.delete(r.rel);
     closeRename();
+    rvRender();
     if (lastCodes.length){ scanList = scanCache ? scanCache.files : scanList; applyExtras(); await applyFilter(); }
     if (removed) toast(T(`파일명을 바꿨어요: ${name}`, `Renamed to ${name}`));
     else alert(T(`새 이름으로 저장했지만 예전 파일을 지우지 못했어요 (누가 열어 두었을 수 있어요).\n\n예전 파일: ${r.rel}\n\n탐색기에서 직접 지워 주세요.`,
@@ -1976,6 +2005,70 @@ async function doRename(e){
     err.textContent = T('바꾸지 못했어요: ', 'Could not rename: ') + e3.message;
     $('#rnGo').disabled = false;
   }
+}
+
+/* ---------- 업로드된 파일 이름 바꾸기 (업로드 탭, 편집 권한) ----------
+   폴더를 고르면 그 안의 파일 목록 (검색과 같은 파일 목록 · 목록 파일을 씀). 파일명이 그 서류 유형의 규칙과 다르면 ⚠.
+   '파일명 수정'은 파일 찾기와 같은 창(openRename) */
+const RV_MAX = 300;
+let rvToken = 0;
+function goRenameView(){
+  if (!canEdit()){ toast('파일명을 바꿀 권한이 없어요'); return; }
+  if ($('#rvFolder').options.length <= 1)
+    $('#rvFolder').innerHTML = `<option value="">전체 폴더</option>` + TYPES.map(t => `<option value="${esc(t.folder)}">${esc(t.folder)}</option>`).join('');
+  show('#viewRename'); rvLoad(false);
+}
+async function rvLoad(force){
+  if (!(await ensureRoot())) return;
+  const msg = t => $('#rvMeta').textContent = t;
+  if (force === true || !scanCache || scanCache.root !== root){
+    const idx = force === true ? null : await loadIndex();
+    if (idx){ scanCache = idx; startBgScan(); }
+    else {
+      const tok = ++rvToken; ++scanToken; bgScanning = false;
+      msg('공용폴더 파일 목록을 읽는 중…');
+      const res = await scanAll(() => tok !== rvToken, n => msg(`공용폴더 파일 목록을 읽는 중… ${n}개`));
+      if (tok !== rvToken) return;
+      scanCache = {root, at: Date.now(), ...res}; saveIndex(scanCache);
+    }
+  }
+  rvRender();
+}
+/* 파일명이 그 유형 규칙대로인지: 칸 수가 맞고, 날짜 칸은 8자리 숫자, 고정·선택 칸은 정해진 값 */
+function nameFollowsRule(it){
+  const t = it.type || it.folderType; if (!t) return false;
+  const g = guessParts(t, it.name); if (!g) return false;
+  return t.parts.every((p, i) => {
+    const v = g[i];
+    if (!v) return !!p.optional;
+    if (p.kind === 'date') return /^\d{8}$/.test(v);
+    if (p.kind === 'select') return p.options.includes(v);
+    if (p.kind === 'fixed') return v.toUpperCase() === String(p.value).toUpperCase();
+    return true;
+  }) && /\.pdf$/i.test(it.name);
+}
+function rvRender(){
+  if ($('#viewRename').hidden || !scanCache) return;
+  const folder = $('#rvFolder').value, q = $('#rvQ').value.trim().toLowerCase(), onlyBad = $('#rvBad').checked;
+  let list = scanCache.files.filter(it => (!folder || it.rel.startsWith(folder + '\\')) && (!q || it.name.toLowerCase().includes(q)));
+  const withRule = list.map(it => ({it, ok: nameFollowsRule(it), misfiled: !!(it.type && it.type !== it.folderType)}));
+  const bad = withRule.filter(x => !x.ok || x.misfiled).length;
+  const rows = (onlyBad ? withRule.filter(x => !x.ok || x.misfiled) : withRule).sort((a, b) => a.it.rel.localeCompare(b.it.rel));
+  const at = new Date(scanCache.at), hm = `${String(at.getHours()).padStart(2,'0')}:${String(at.getMinutes()).padStart(2,'0')}`;
+  $('#rvMeta').innerHTML = `파일 ${list.length}개 · 규칙과 다르거나 다른 폴더에 있는 파일 <b class="${bad ? 'warnc' : ''}">${bad}개</b> · 파일 목록 ${hm} 기준 ` +
+    (bgScanning ? '· 최신 목록 확인 중…' : `<button class="textbtn" id="rvReload">다시 읽기</button>`);
+  const rb = $('#rvReload'); if (rb) rb.onclick = () => rvLoad(true);
+  if (!rows.length){ $('#rvList').innerHTML = `<div class="empty">${onlyBad ? '규칙과 다른 파일이 없어요 👍' : '파일이 없어요.'}</div>`; return; }
+  const shown = rows.slice(0, RV_MAX);
+  $('#rvList').innerHTML = `<table><thead><tr><th>유형</th><th>파일명</th><th class="hide-sm">폴더</th><th></th></tr></thead><tbody>${shown.map((x, i) => `
+    <tr><td><span class="badge">${x.it.type ? `${x.it.type.id}. ${esc(x.it.type.name)}` : '기타'}</span></td>
+      <td><button class="link" data-rvopen="${i}" title="새 탭에서 열기">${esc(x.it.name)}</button>
+        ${!x.ok ? '<span class="misfiled">⚠ 파일명 규칙과 달라요</span>' : ''}${x.misfiled ? `<span class="misfiled">⚠ ${esc(x.it.rel.includes('\\') ? x.it.rel.split('\\')[0] : '최상위')} 폴더에 있음</span>` : ''}</td>
+      <td class="hide-sm muted">${esc(x.it.rel.includes('\\') ? x.it.rel.slice(0, x.it.rel.lastIndexOf('\\')) : '(맨 위)')}</td>
+      <td><button class="btn small" data-rv="${i}">파일명 수정</button></td></tr>`).join('')}</tbody></table>` +
+    (rows.length > RV_MAX ? `<p class="muted" style="font-size:13px">처음 ${RV_MAX}개만 보여요. 폴더를 고르거나 파일명으로 찾아 주세요.</p>` : '');
+  $('#rvList').querySelectorAll('[data-rv]').forEach(b => b.onclick = () => openRename(shown[+b.dataset.rv].it));
+  $('#rvList').querySelectorAll('[data-rvopen]').forEach(b => b.onclick = () => openFile(shown[+b.dataset.rvopen].it));
 }
 
 /* ---------- 일괄 다운로드 ---------- */
@@ -2138,6 +2231,8 @@ function applyAuth(){
   $('#meLevel').textContent = me ? (EX_LEVELS[exLevel] || (exLevel === 'blocked' ? '접속 막힘' : exLevel ? '권한 없음' : '…')) : '';
   $('#navAdmin').hidden = !isAdmin();
   if (!$('#viewAdmin').hidden && !isAdmin()) goHome();
+  $('#goRename').hidden = !canEdit();
+  if (!$('#viewRename').hidden && !canEdit()) goHome();
   if (!$('#rpModal').hidden) watchReasons(lastCodes), renderReport();
   if (isAdmin()) startAccounts();
 }
@@ -2324,6 +2419,10 @@ $('#btnSameType').onclick = () => openForm(curType.id);
 $('#btnSearch').onclick = () => search();
 $('#btnReport').onclick = openReport;
 $('#rnType').onchange = renderRnFields;
+$('#goRename').onclick = goRenameView;
+$('#rvBack').onclick = goUpload;
+$('#rvFolder').onchange = $('#rvBad').onchange = rvRender;
+$('#rvQ').oninput = rvRender;
 $('#rnForm').onsubmit = doRename;
 $('#rnClose').onclick = $('#rnCancel').onclick = closeRename;
 document.querySelectorAll('.langpill button').forEach(b => b.onclick = () => setLang(b.dataset.lang));
