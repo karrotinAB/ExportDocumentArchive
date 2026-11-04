@@ -135,6 +135,8 @@ h2{font-size:18px; margin:0 0 14px}
 .btn.report:hover{background:#2196e6; border-color:#2196e6}
 .rescan{white-space:nowrap}
 .rescan .textbtn{font-size:13px}
+.missing.pending{color:var(--muted)}
+.checking{color:#9a5b0b; font-weight:600; white-space:nowrap}
 .missing{margin:-4px 0 12px; font-size:13px; color:var(--red); word-break:break-all}
 .bulkbar{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; font-size:13px}
 .bulkbar .rowbtns{gap:8px}
@@ -767,6 +769,7 @@ async function connect(){
     updateConn();
     const made = await ensureTypeFolders();
     toast(made ? `"${root.name}" 연결 · 서류 폴더 ${made}개를 새로 만들었어요` : `"${root.name}" 폴더에 연결했어요`);
+    warmScan();
     return true;
   }catch(e){
     if (e.name !== 'AbortError') toast('폴더 연결 실패: ' + e.message);
@@ -1459,7 +1462,7 @@ async function saveIndex(c){
 }
 /* 폴더를 다 읽기 (기다림) */
 async function fullScan(my){
-  const tok = ++scanToken;
+  const tok = ++scanToken; bgScanning = false;
   $('#meta').textContent = T('공용폴더 파일 목록을 읽는 중…', 'Reading the shared folder…');
   const res = await scanAll(() => my !== searchToken || tok !== scanToken,
     n => { if (my === searchToken) $('#meta').textContent = T(`공용폴더 파일 목록을 읽는 중… ${n}개`, `Reading the shared folder… ${n} files`); });
@@ -1468,15 +1471,35 @@ async function fullScan(my){
   return true;
 }
 /* 뒤에서 새로 읽기 (결과는 먼저 보여 주고, 다 읽으면 결과를 고침) */
+let bgCount = 0, bgPromise = null, waitingFirst = false;
 function startBgScan(){
   if (bgScanning) return;
-  bgScanning = true; const tok = ++scanToken, r0 = root;
-  scanAll(() => tok !== scanToken || root !== r0).then(res => {
+  bgScanning = true; bgCount = 0; const tok = ++scanToken, r0 = root;
+  bgPromise = scanAll(() => tok !== scanToken || root !== r0, n => {   // 몇 개 읽었는지 결과 위에 보여 줌
+    bgCount = n;
+    if (waitingFirst) $('#meta').textContent = T(`공용폴더 파일 목록을 읽는 중… ${n}개`, `Reading the shared folder… ${n} files`);
+    else if (lastCodes.length && !$('#viewSearch').hidden) renderMeta();
+  }).then(async res => {
     if (tok !== scanToken || root !== r0) return;
     scanCache = {root, at: Date.now(), ...res}; saveIndex(scanCache);
-    if (tok === scanToken) bgScanning = false;
-    if (lastCodes.length){ scanList = scanCache.files; applyExtras(); return applyFilter(); }   // 결과를 새 목록으로 다시
-  }).finally(() => { if (tok === scanToken){ bgScanning = false; if (lastCodes.length) renderMeta(); } });
+    bgScanning = false;
+    if (lastCodes.length){   // 결과를 새 목록으로 다시 찾고, 달라졌으면 알려 줌
+      const before = found.length;
+      scanList = scanCache.files; applyExtras(); await applyFilter();
+      if (!$('#rpModal').hidden) renderReport();
+      const diff = found.length - before;
+      toast(diff > 0 ? T(`공용폴더를 다시 확인해서 ${diff}건을 더 찾았어요`, `Re-checked the shared folder: ${diff} more found`)
+        : diff < 0 ? T(`공용폴더를 다시 확인했어요 (없어진 파일 ${-diff}건)`, `Re-checked the shared folder (${-diff} removed)`)
+        : T('공용폴더를 다시 확인했어요 · 결과는 같아요', 'Re-checked the shared folder · no change'));
+    }
+  }).finally(() => { if (tok === scanToken){ bgScanning = false; if (lastCodes.length){ renderMeta(); renderResults(); } } });
+}
+/* 공용폴더를 연결하자마자 뒤에서 목록을 준비 (검색할 때쯤엔 최신 목록이 돼 있게) */
+async function warmScan(){
+  if (scanCache && scanCache.root === root) return;
+  const idx = await loadIndex();
+  if (idx && !(scanCache && scanCache.root === root)) scanCache = idx;
+  startBgScan();
 }
 function applyExtras(){ scanList.forEach(it => it.extra = lastExtraMap[it.rel.toLowerCase()] || []); }
 async function search(force){
@@ -1487,6 +1510,11 @@ async function search(force){
   scanList = []; lastCodes = []; found = []; matchedAll = []; selected.clear();
   $('#results').innerHTML = '';
   $('#meta').textContent = T('검색 중…', 'Searching…');
+  if ((!scanCache || scanCache.root !== root) && bgScanning && bgPromise && force !== true){   // 연결하자마자 읽기 시작한 게 있으면 그걸 기다림
+    waitingFirst = true; $('#meta').textContent = T('공용폴더 파일 목록을 읽는 중…', 'Reading the shared folder…');
+    try { await bgPromise; } finally { waitingFirst = false; }
+    if (my !== searchToken) return;
+  }
   if (force === true){ bgScanning = false; if (!(await fullScan(my))) return; }
   else if (!scanCache || scanCache.root !== root){
     const idx = await loadIndex();
@@ -1555,17 +1583,22 @@ function renderMeta(){
   const at = scanCache ? new Date(scanCache.at) : null, hm = at ? `${String(at.getHours()).padStart(2,'0')}:${String(at.getMinutes()).padStart(2,'0')}` : '';
   $('#meta').innerHTML = esc(T(`${label} 검색 결과 ${found.length}건 · 파일 ${scanList.length}개 확인`, `${label}: ${found.length} result${found.length === 1 ? '' : 's'} · ${scanList.length} files checked`) +
     (hidden ? T(` · 서류 유형 필터로 ${hidden}건 숨김`, ` · ${hidden} hidden by document type filter`) : '')) +
-    (hm && bgScanning ? ` <span class="rescan">· ${T(`파일 목록 ${hm} 기준 · 최신 목록 확인 중…`, `file list as of ${hm} · checking for changes…`)}</span>` : '') +
+    (hm && bgScanning ? ` <span class="checking">⏳ ${T(`저장된 목록(${hm})으로 먼저 보여 드려요 · 공용폴더를 다시 확인하는 중… ${bgCount ? bgCount + '개' : ''}`, `Showing the saved list (${hm}) first · re-checking the shared folder… ${bgCount || ''}`)}</span>` : '') +
     (hm && !bgScanning ? ` <span class="rescan">· ${T(`파일 목록 ${hm} 기준`, `file list as of ${hm}`)} <button class="textbtn" id="btnRescan" title="${T('그사이 다른 사람이 올린 파일까지 보려면 공용폴더를 다시 읽어요', 'Read the shared folder again to include files added since')}">${T('다시 읽기', 'Re-read')}</button></span>` : '');
   const rb = $('#btnRescan'); if (rb) rb.onclick = () => search(true);
 }
 function renderResults(){
   const multi = lastCodes.length > 1;
   const missing = multi ? lastCodes.filter(c => !found.some(r => r.hits.includes(c))) : [];
-  const miss = missing.length ? `<div class="missing">${T(`못 찾은 코드 ${missing.length}개`, `Codes not found (${missing.length})`)}: ${missing.map(esc).join(', ')}
-      <button class="textbtn" id="copyMissing">${T('복사', 'Copy')}</button></div>` : '';
+  const checking = bgScanning;   // 저장된 목록으로 먼저 찾은 결과: 아직 확정이 아님
+  const miss = !missing.length ? '' : checking
+    ? `<div class="missing pending">${T(`저장된 목록에서 아직 못 찾은 코드 ${missing.length}개 (공용폴더 확인이 끝나면 바뀔 수 있어요)`, `Not in the saved list yet: ${missing.length} (may change when the re-check finishes)`)}: ${missing.map(esc).join(', ')}</div>`
+    : `<div class="missing">${T(`못 찾은 코드 ${missing.length}개`, `Codes not found (${missing.length})`)}: ${missing.map(esc).join(', ')}
+      <button class="textbtn" id="copyMissing">${T('복사', 'Copy')}</button></div>`;
   if (!found.length){
-    $('#results').innerHTML = miss + `<div class="empty">${matchedCount
+    $('#results').innerHTML = miss + `<div class="empty">${checking
+      ? T('⏳ 저장된 목록에서는 아직 못 찾았어요. 지금 공용폴더를 다시 확인하고 있어요 — 끝나면 결과가 저절로 바뀌어요.', '⏳ Not found in the saved list yet. Re-checking the shared folder now — results will update automatically.')
+      : matchedCount
       ? T('찾은 파일이 있지만 서류 유형 필터로 모두 숨겨졌어요. 위에서 서류 유형을 선택해주세요.', 'Files were found but all are hidden by the document type filter. Select document types above.')
       : T('찾은 파일이 없어요. "코드 정확히 일치"를 끄고 다시 검색해보세요.', 'No files found. Try turning off "Exact code match" and search again.')}</div>`;
     bindMissing(missing);
@@ -1735,7 +1768,8 @@ function renderReport(){
     const memo = prompt(`${code} · ${b.dataset.t}. ${typeName(TYPES.find(t => t.id === +b.dataset.t))}\n${T('메모 (비우면 지움)', 'Note (leave empty to remove)')}`, cur);
     if (memo !== null) setReason(code, b.dataset.t, {memo: memo.trim()});
   });
-  $('#rpStatus').textContent = T(`코드 ${lastCodes.length}개 · 없는 서류 ${missingAll}칸`, `${lastCodes.length} codes · ${missingAll} missing`) + (cloud && noReason ? T(` · 사유 미입력 ${noReason}칸`, ` · ${noReason} without reason`) : '');
+  $('#rpStatus').textContent = T(`코드 ${lastCodes.length}개 · 없는 서류 ${missingAll}칸`, `${lastCodes.length} codes · ${missingAll} missing`) + (cloud && noReason ? T(` · 사유 미입력 ${noReason}칸`, ` · ${noReason} without reason`) : '') +
+    (bgScanning ? T(' · ⏳ 공용폴더 다시 확인 중 (끝나면 표가 바뀌어요)', ' · ⏳ re-checking the shared folder (table will update)') : '');
 }
 /* 그 칸(서류 하나)만 바꾼다 (merge) — 다른 사람이 같은 코드의 다른 칸을 고쳐도 덮어쓰지 않음 */
 async function setReason(code, typeId, patch){
