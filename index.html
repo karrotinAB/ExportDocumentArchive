@@ -825,7 +825,7 @@ function openForm(id){
     let input;
     if (p.kind === 'fixed')       input = `<input id="${id}" value="${esc(p.value)}" readonly>`;
     else if (p.kind === 'select') input = `<select id="${id}"><option value="">선택하세요</option>${p.options.map(o=>`<option>${esc(o)}</option>`).join('')}</select>`;
-    else if (p.kind === 'date')   input = `<input id="${id}" type="date">`;
+    else if (p.kind === 'date')   input = `<input id="${id}" type="date" min="1900-01-01" max="9999-12-31">`;   // max가 있어야 연도를 4자리만 받고 월로 넘어감
     else                          input = `<input id="${id}" value="${esc(p.value||'')}" placeholder="${esc(p.ph||'')}" autocomplete="off">`;
     const extra = p.key !== 'product' ? '' : canEdit()
       ? `<label class="xlabel" for="extraCodes">추가 제품코드 <em>(선택 · 파일명에는 안 들어가고 검색에 쓰여요)</em></label>
@@ -1947,7 +1947,7 @@ function renderRnFields(){
     let input;
     if (p.kind === 'fixed')       input = `<input id="${id}" value="${esc(p.value)}" readonly>`;
     else if (p.kind === 'select') input = `<select id="${id}"><option value="">${T('선택하세요', 'Select')}</option>${p.options.map(o => `<option${o === g ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
-    else if (p.kind === 'date')   input = `<input id="${id}" type="date" value="${/^\d{8}$/.test(g) ? `${g.slice(0,4)}-${g.slice(4,6)}-${g.slice(6)}` : ''}">`;
+    else if (p.kind === 'date')   input = `<input id="${id}" type="date" min="1900-01-01" max="9999-12-31" value="${/^\d{8}$/.test(g) ? `${g.slice(0,4)}-${g.slice(4,6)}-${g.slice(6)}` : ''}">`;
     else                          input = `<input id="${id}" value="${esc(g || p.value || '')}" placeholder="${esc(p.ph || '')}" autocomplete="off">`;
     return `<div class="field"><label for="${id}">${esc(label)}${opt}</label>${input}</div>`;
   }).join('');
