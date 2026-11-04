@@ -282,14 +282,18 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
 .rnold{font-size:13px; color:var(--muted); margin-top:10px; word-break:break-all}
 .rnold code{font-family:ui-monospace,Consolas,monospace; color:var(--text)}
 .rnbox .field select, .rnbox .field input{width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:#fff}
-.renamecard{display:flex; flex-direction:column; gap:4px; width:100%; margin-top:22px; padding:18px 22px; border:1.5px dashed #c9c9c9; border-radius:var(--radius); background:#fff; cursor:pointer; text-align:left; font:inherit; transition:.15s}
-.renamecard:hover{border-color:var(--brand); background:var(--brand-soft)}
-.renamecard b{font-size:15px}
-.renamecard span{font-size:13px; color:var(--muted)}
-.rvbar{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
-.rvbar select, .rvbar input:not([type=checkbox]){padding:9px 12px; border:1px solid var(--border); border-radius:10px; background:#fff}
-.rvbar #rvQ{flex:1; min-width:200px}
 .warnc{color:#9a5b0b}
+.editbar{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:-6px 0 18px; font-size:13px}
+.editing{margin:-6px 0 18px; padding:10px 14px; border-radius:10px; background:#fff1d6; color:#7a4a00; font-size:13px; word-break:break-all}
+.editing code{font-family:ui-monospace,Consolas,monospace}
+.pickbox{width:min(720px, 100%); max-height:85vh}
+.pickbox #pickQ{padding:10px 12px; border:1px solid var(--border); border-radius:10px; margin-top:12px}
+.picklist{overflow:auto; border:1px solid var(--border); border-radius:12px; min-height:120px}
+.pickrow{display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; width:100%; text-align:left; background:#fff; border:none; border-bottom:1px solid var(--border); padding:10px 14px; cursor:pointer; font:inherit}
+.pickrow:hover{background:var(--brand-soft)}
+.pickrow .pn{font-weight:600; word-break:break-all}
+.pickrow .ps{font-size:12px}
+.pickrow .misfiled{display:inline; margin:0}
 [hidden]{display:none !important}
 </style>
 </head>
@@ -348,32 +352,20 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
     <h1>어떤 서류인가요?</h1>
     <p class="sub">유형에 따라 저장 폴더와 파일명 규칙이 정해집니다.</p>
     <div class="tiles" id="typeGrid"></div>
-    <button class="renamecard" id="goRename" hidden>
-      <b>✏️ 업로드된 파일 이름 바꾸기</b>
-      <span>이미 공용폴더에 있는 파일의 이름을 서류 유형 규칙대로 고쳐요. 규칙과 다른 파일을 찾아서 보여 줘요.</span>
-    </button>
   </section>
 
-  <!-- 업로드: 업로드된 파일 이름 바꾸기 -->
-  <section id="viewRename" hidden>
-    <button class="back" id="rvBack">← 서류 유형 선택으로</button>
-    <h1>업로드된 파일 이름 바꾸기</h1>
-    <p class="sub">폴더를 고르면 그 안의 파일이 나와요. 파일명이 서류 유형의 규칙과 다르거나 다른 폴더에 들어가 있으면 ⚠로 표시돼요.<br>
-      '파일명 수정'을 누르면 규칙대로 칸을 채워 새 이름으로 바꾸고, 그 유형 폴더로 옮겨요.</p>
-    <div class="rvbar">
-      <select id="rvFolder"><option value="">전체 폴더</option></select>
-      <input id="rvQ" placeholder="파일명으로 찾기" autocomplete="off">
-      <label class="opt"><input type="checkbox" id="rvBad"> 규칙과 다른 파일만</label>
-    </div>
-    <div class="meta" id="rvMeta"></div>
-    <div id="rvList"></div>
-  </section>
 
   <!-- 업로드: 2단계 정보 입력 -->
   <section id="viewForm" hidden>
     <button class="back" id="backToType">← 서류 유형 다시 선택</button>
     <div class="card">
       <div class="selected" id="selectedType"></div>
+      <div class="editbar" id="editBar" hidden>
+        <button type="button" class="btn small" id="btnLoadExisting">📂 있는 파일 수정</button>
+        <span class="muted">이미 저장된 파일을 불러와서 파일명·내용을 고쳐 덮어써요</span>
+      </div>
+      <div class="editing" id="editing" hidden>✏️ 있는 파일 수정 중: <code id="editRel"></code>
+        <button type="button" class="textbtn" id="btnEditCancel">새 파일 올리기로 돌아가기</button></div>
       <div class="form" id="formFields"></div>
       <div class="drop" id="drop" tabindex="0">
         <div id="dropText">PDF 파일을 여기에 끌어다 놓거나 클릭해서 선택하세요</div>
@@ -401,7 +393,7 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
   <section id="viewDone" hidden>
     <div class="card done">
       <div class="check">✓</div>
-      <h2>저장했어요</h2>
+      <h2 id="doneTitle">저장했어요</h2>
       <code id="donePath"></code>
       <p class="muted" id="doneExtra" hidden style="font-size:13px; margin:0 0 6px"></p>
       <div class="actions" style="justify-content:center">
@@ -518,6 +510,16 @@ table.acc .warn{color:#9a5b0b; font-size:12px; display:block; margin-top:2px}
       <button class="btn report" id="rpUpdate" title="공용폴더의 없는서류_현황.xlsx에 이 코드들을 더하고 전체를 최신으로 다시 만들어요" data-en-title="Add these codes to 없는서류_현황.xlsx in the shared folder and rebuild it" data-en="Update shared file">업데이트 하기</button>
     </div>
     <div class="rpwrap"><table class="rp" id="rpTable"></table></div>
+  </div>
+</div>
+
+<!-- 있는 파일 수정: 불러올 파일 고르기 -->
+<div class="modal" id="pickModal" hidden>
+  <div class="mbox pickbox">
+    <div class="mhead"><h2 id="pickTitle">고칠 파일 불러오기</h2><button type="button" class="mclose" id="pickClose">✕</button></div>
+    <input id="pickQ" placeholder="파일명으로 찾기" autocomplete="off">
+    <div class="muted" id="pickMeta" style="font-size:13px; margin:8px 0"></div>
+    <div class="picklist" id="pickList"></div>
   </div>
 </div>
 
@@ -740,15 +742,15 @@ function toast(msg){
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
 }
-const NAV_OF = {'#viewHome':'home', '#viewType':'upload', '#viewForm':'upload', '#viewDone':'upload', '#viewRename':'upload', '#viewSearch':'search', '#viewAdmin':'admin'};
+const NAV_OF = {'#viewHome':'home', '#viewType':'upload', '#viewForm':'upload', '#viewDone':'upload', '#viewSearch':'search', '#viewAdmin':'admin'};
 function show(id){
   Object.keys(NAV_OF).forEach(v => $(v).hidden = (v !== id));
   document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('active', b.dataset.nav === NAV_OF[id]));
-  $('#main').classList.toggle('wide', id === '#viewType' || id === '#viewSearch' || id === '#viewForm' || id === '#viewAdmin' || id === '#viewRename');
+  $('#main').classList.toggle('wide', id === '#viewType' || id === '#viewSearch' || id === '#viewForm' || id === '#viewAdmin');
   window.scrollTo(0,0);
 }
 function goHome(){ resetForm(); curType = null; clearSearch(); show('#viewHome'); }
-function goUpload(){ resetForm(); curType = null; $('#goRename').hidden = !canEdit(); show('#viewType'); }
+function goUpload(){ resetForm(); curType = null; show('#viewType'); }
 function goSearch(){ show('#viewSearch'); fitQ(); $('#q').focus(); }
 async function copyText(t){
   try { await navigator.clipboard.writeText(t); }
@@ -837,6 +839,7 @@ function openForm(id){
     const i = +el.id.split('_')[1];
     el.oninput = el.onchange = () => { userEdited(i); updatePreview(); };   // 코드로 넣은 값은 이벤트가 안 생김
   });
+  $('#editBar').hidden = !canEdit();
   resetForm();
   show('#viewForm');
   const first = $('#formFields').querySelector('input:not([readonly]),select'); if (first) first.focus();
@@ -870,7 +873,9 @@ function updatePreview(){
     if (v) return esc(v);
     return p.optional ? null : `<span class="ph">[${esc(p.label)}]</span>`;
   }).filter(Boolean).join('_') + '.pdf';
-  $('#previewPath').textContent = '저장 위치: ' + joinPath(CONFIG.BASE_UNC, curType.folder, buildName().name);
+  const bn = buildName().name, newRel = curType.folder + '\\' + bn;
+  $('#previewPath').textContent = '저장 위치: ' + joinPath(CONFIG.BASE_UNC, curType.folder, bn) +
+    (!editItem ? '' : newRel === editItem.rel ? '  (같은 이름 · 덮어쓰기)' : `  (예전 파일 ${editItem.name}은(는) 지워져요)`);
   const ex = extraCodes();
   $('#previewExtra').hidden = !ex.length;
   $('#previewExtra').textContent = `추가 제품코드 ${ex.length}개 (검색에만 쓰임): ${ex.join(', ')}`;
@@ -891,6 +896,7 @@ function setFile(file){
   extractFromFile(file);
 }
 function resetForm(){
+  editItem = null; $('#editing').hidden = true; $('#btnSave').textContent = '공용폴더에 저장';
   clearPdfState(false);
   curFile = null;
   $('#fileInput').value = '';
@@ -911,15 +917,29 @@ async function save(){
   if (!(await ensureRoot())) return;
   const btn = $('#btnSave'); btn.disabled = true; btn.textContent = '저장 중…';
   try{
+    const edit = editItem, newRel = curType.folder + '\\' + name, same = edit && newRel === edit.rel;
+    if (edit && !same && newRel.toLowerCase() === edit.rel.toLowerCase()){ toast('대·소문자만 다른 이름으로는 바꿀 수 없어요'); return; }
     const dir = await root.getDirectoryHandle(curType.folder, {create:true});
     let exists = false;
     try { await dir.getFileHandle(name); exists = true; } catch {}
-    if (exists && !confirm(`같은 이름의 파일이 이미 있어요.\n\n${name}\n\n덮어쓸까요?`)) return;
+    if (exists && !same && !confirm(`같은 이름의 파일이 이미 있어요.\n\n${name}\n\n덮어쓸까요?`)) return;
+    const data = edit ? new Blob([await curFile.arrayBuffer()], {type: 'application/pdf'}) : curFile;   // 같은 파일에 다시 쓸 때를 대비해 먼저 메모리로
     const fh = await dir.getFileHandle(name, {create:true});
     const w = await fh.createWritable();
-    await w.write(curFile); await w.close();
+    await w.write(data); await w.close();
     lastSavedPath = joinPath(CONFIG.BASE_UNC, curType.folder, name);
+    let oldLeft = '';
+    if (edit && !same){   // 이름이 바뀌었으면 예전 파일 지우기
+      try {
+        const parts = edit.rel.split('\\'); let d = root;
+        for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p);
+        await d.removeEntry(parts[parts.length - 1]);
+        if (scanCache && scanCache.root === root) scanCache.files = scanCache.files.filter(f => f.rel !== edit.rel);
+      } catch { oldLeft = edit.rel; }
+      if (cloudOn() && !oldLeft){ try { await db.collection('exExtra').doc(docKey(edit.rel)).delete(); } catch {} }
+    }
     addToScanCache(curType.folder, name, fh);
+    $('#doneTitle').textContent = edit ? '수정했어요' : '저장했어요';
     $('#donePath').textContent = lastSavedPath;
     const ex = extraCodes();
     let extraMsg = '';
@@ -927,13 +947,14 @@ async function save(){
       try { await saveExtraCodes(curType.folder, name, ex); if (ex.length) extraMsg = `추가 제품코드 ${ex.length}개도 함께 저장했어요: ${ex.join(', ')}`; }
       catch(e){ extraMsg = `⚠ PDF는 저장했지만 추가 제품코드를 저장하지 못했어요 (${fbErr(e)}). 다시 저장해 주세요.`; }
     }
+    if (oldLeft) extraMsg = `⚠ 새 이름으로 저장했지만 예전 파일을 지우지 못했어요 (누가 열어 두었을 수 있어요). 탐색기에서 직접 지워 주세요: ${oldLeft}` + (extraMsg ? '\n' + extraMsg : '');
     $('#doneExtra').hidden = !extraMsg; $('#doneExtra').textContent = extraMsg;
     resetForm();
     show('#viewDone');
   }catch(e){
     toast('저장 실패: ' + e.message);
   }finally{
-    btn.textContent = '공용폴더에 저장'; updateSave();
+    btn.textContent = editItem ? '수정 저장 (덮어쓰기)' : '공용폴더에 저장'; updateSave();
   }
 }
 
@@ -1454,9 +1475,8 @@ function startBgScan(){
     if (tok !== scanToken || root !== r0) return;
     scanCache = {root, at: Date.now(), ...res}; saveIndex(scanCache);
     if (tok === scanToken) bgScanning = false;
-    rvRender();
     if (lastCodes.length){ scanList = scanCache.files; applyExtras(); return applyFilter(); }   // 결과를 새 목록으로 다시
-  }).finally(() => { if (tok === scanToken){ bgScanning = false; if (lastCodes.length) renderMeta(); rvRender(); } });
+  }).finally(() => { if (tok === scanToken){ bgScanning = false; if (lastCodes.length) renderMeta(); } });
 }
 function applyExtras(){ scanList.forEach(it => it.extra = lastExtraMap[it.rel.toLowerCase()] || []); }
 async function search(force){
@@ -1996,7 +2016,6 @@ async function doRename(e){
     if (lastExtraMap[ok]){ lastExtraMap[nk] = lastExtraMap[ok]; if (removed) delete lastExtraMap[ok]; }
     selected.delete(r.rel);
     closeRename();
-    rvRender();
     if (lastCodes.length){ scanList = scanCache ? scanCache.files : scanList; applyExtras(); await applyFilter(); }
     if (removed) toast(T(`파일명을 바꿨어요: ${name}`, `Renamed to ${name}`));
     else alert(T(`새 이름으로 저장했지만 예전 파일을 지우지 못했어요 (누가 열어 두었을 수 있어요).\n\n예전 파일: ${r.rel}\n\n탐색기에서 직접 지워 주세요.`,
@@ -2007,33 +2026,6 @@ async function doRename(e){
   }
 }
 
-/* ---------- 업로드된 파일 이름 바꾸기 (업로드 탭, 편집 권한) ----------
-   폴더를 고르면 그 안의 파일 목록 (검색과 같은 파일 목록 · 목록 파일을 씀). 파일명이 그 서류 유형의 규칙과 다르면 ⚠.
-   '파일명 수정'은 파일 찾기와 같은 창(openRename) */
-const RV_MAX = 300;
-let rvToken = 0;
-function goRenameView(){
-  if (!canEdit()){ toast('파일명을 바꿀 권한이 없어요'); return; }
-  if ($('#rvFolder').options.length <= 1)
-    $('#rvFolder').innerHTML = `<option value="">전체 폴더</option>` + TYPES.map(t => `<option value="${esc(t.folder)}">${esc(t.folder)}</option>`).join('');
-  show('#viewRename'); rvLoad(false);
-}
-async function rvLoad(force){
-  if (!(await ensureRoot())) return;
-  const msg = t => $('#rvMeta').textContent = t;
-  if (force === true || !scanCache || scanCache.root !== root){
-    const idx = force === true ? null : await loadIndex();
-    if (idx){ scanCache = idx; startBgScan(); }
-    else {
-      const tok = ++rvToken; ++scanToken; bgScanning = false;
-      msg('공용폴더 파일 목록을 읽는 중…');
-      const res = await scanAll(() => tok !== rvToken, n => msg(`공용폴더 파일 목록을 읽는 중… ${n}개`));
-      if (tok !== rvToken) return;
-      scanCache = {root, at: Date.now(), ...res}; saveIndex(scanCache);
-    }
-  }
-  rvRender();
-}
 /* 파일명이 그 유형 규칙대로인지: 칸 수가 맞고, 날짜 칸은 8자리 숫자, 고정·선택 칸은 정해진 값 */
 function nameFollowsRule(it){
   const t = it.type || it.folderType; if (!t) return false;
@@ -2047,28 +2039,61 @@ function nameFollowsRule(it){
     return true;
   }) && /\.pdf$/i.test(it.name);
 }
-function rvRender(){
-  if ($('#viewRename').hidden || !scanCache) return;
-  const folder = $('#rvFolder').value, q = $('#rvQ').value.trim().toLowerCase(), onlyBad = $('#rvBad').checked;
-  let list = scanCache.files.filter(it => (!folder || it.rel.startsWith(folder + '\\')) && (!q || it.name.toLowerCase().includes(q)));
-  const withRule = list.map(it => ({it, ok: nameFollowsRule(it), misfiled: !!(it.type && it.type !== it.folderType)}));
-  const bad = withRule.filter(x => !x.ok || x.misfiled).length;
-  const rows = (onlyBad ? withRule.filter(x => !x.ok || x.misfiled) : withRule).sort((a, b) => a.it.rel.localeCompare(b.it.rel));
-  const at = new Date(scanCache.at), hm = `${String(at.getHours()).padStart(2,'0')}:${String(at.getMinutes()).padStart(2,'0')}`;
-  $('#rvMeta').innerHTML = `파일 ${list.length}개 · 규칙과 다르거나 다른 폴더에 있는 파일 <b class="${bad ? 'warnc' : ''}">${bad}개</b> · 파일 목록 ${hm} 기준 ` +
-    (bgScanning ? '· 최신 목록 확인 중…' : `<button class="textbtn" id="rvReload">다시 읽기</button>`);
-  const rb = $('#rvReload'); if (rb) rb.onclick = () => rvLoad(true);
-  if (!rows.length){ $('#rvList').innerHTML = `<div class="empty">${onlyBad ? '규칙과 다른 파일이 없어요 👍' : '파일이 없어요.'}</div>`; return; }
-  const shown = rows.slice(0, RV_MAX);
-  $('#rvList').innerHTML = `<table><thead><tr><th>유형</th><th>파일명</th><th class="hide-sm">폴더</th><th></th></tr></thead><tbody>${shown.map((x, i) => `
-    <tr><td><span class="badge">${x.it.type ? `${x.it.type.id}. ${esc(x.it.type.name)}` : '기타'}</span></td>
-      <td><button class="link" data-rvopen="${i}" title="새 탭에서 열기">${esc(x.it.name)}</button>
-        ${!x.ok ? '<span class="misfiled">⚠ 파일명 규칙과 달라요</span>' : ''}${x.misfiled ? `<span class="misfiled">⚠ ${esc(x.it.rel.includes('\\') ? x.it.rel.split('\\')[0] : '최상위')} 폴더에 있음</span>` : ''}</td>
-      <td class="hide-sm muted">${esc(x.it.rel.includes('\\') ? x.it.rel.slice(0, x.it.rel.lastIndexOf('\\')) : '(맨 위)')}</td>
-      <td><button class="btn small" data-rv="${i}">파일명 수정</button></td></tr>`).join('')}</tbody></table>` +
-    (rows.length > RV_MAX ? `<p class="muted" style="font-size:13px">처음 ${RV_MAX}개만 보여요. 폴더를 고르거나 파일명으로 찾아 주세요.</p>` : '');
-  $('#rvList').querySelectorAll('[data-rv]').forEach(b => b.onclick = () => openRename(shown[+b.dataset.rv].it));
-  $('#rvList').querySelectorAll('[data-rvopen]').forEach(b => b.onclick = () => openFile(shown[+b.dataset.rvopen].it));
+/* ---------- 있는 파일 수정 (업로드 화면, 편집 권한) ----------
+   서류 유형 화면에서 '있는 파일 수정' → 그 유형 폴더의 파일을 불러옴 → 파일명을 나눠 칸에 채우고(추가 제품코드도) PDF는 그대로 씀
+   → 고쳐서 저장하면 덮어쓰기: 새 이름으로 저장하고, 이름이 바뀌었으면 예전 파일은 지움. 새 PDF를 넣으면 내용도 바뀜 */
+let editItem = null, pickItems = [];
+async function openPicker(){
+  if (!canEdit()){ toast('있는 파일을 고칠 권한이 없어요'); return; }
+  if (!curType || !(await ensureRoot())) return;
+  $('#pickTitle').textContent = `${curType.id}. ${curType.name} — 고칠 파일 불러오기`;
+  $('#pickQ').value = ''; $('#pickList').innerHTML = ''; $('#pickMeta').textContent = '폴더를 읽는 중…';
+  $('#pickModal').hidden = false; $('#pickQ').focus();
+  pickItems = [];
+  let dir;
+  try { dir = await root.getDirectoryHandle(curType.folder); }
+  catch { $('#pickMeta').textContent = `${curType.folder} 폴더에 아직 파일이 없어요.`; return; }
+  for await (const x of walk(dir)) pickItems.push(mkItem(curType.folder + '\\' + x.rel, x.handle));
+  pickItems.sort((a, b) => a.name.localeCompare(b.name));
+  renderPick();
+}
+function renderPick(){
+  const q = $('#pickQ').value.trim().toLowerCase();
+  const list = pickItems.filter(it => !q || it.name.toLowerCase().includes(q));
+  $('#pickMeta').textContent = `${curType.folder} · 파일 ${pickItems.length}개` + (q ? ` 중 ${list.length}개` : '') + ' · 누르면 불러와요';
+  $('#pickList').innerHTML = list.slice(0, 500).map((it, i) => {
+    const sub = it.rel.split('\\').slice(1, -1).join('\\');
+    return `<button type="button" class="pickrow" data-i="${pickItems.indexOf(it)}"><span class="pn">${esc(it.name)}</span>
+      ${nameFollowsRule(it) ? '' : '<span class="misfiled">⚠ 파일명 규칙과 달라요</span>'}${sub ? `<span class="muted ps">${esc(sub)}</span>` : ''}</button>`;
+  }).join('') || '<div class="empty">맞는 파일이 없어요.</div>';
+  $('#pickList').querySelectorAll('.pickrow').forEach(b => b.onclick = () => loadExisting(pickItems[+b.dataset.i]));
+}
+function closePicker(){ $('#pickModal').hidden = true; }
+async function loadExisting(it){
+  closePicker();
+  let file;
+  try { file = await (await handleOf(it)).getFile(); } catch(e){ toast('파일을 불러오지 못했어요: ' + e.message); return; }
+  resetForm();
+  editItem = it;
+  const guess = guessParts(curType, it.name);
+  curType.parts.forEach((p, i) => {
+    const el = fieldEl(i), g = guess ? guess[i] || '' : '';
+    if (!el || p.kind === 'fixed' || !g) return;
+    if (p.kind === 'date'){ if (/^\d{8}$/.test(g)) el.value = `${g.slice(0,4)}-${g.slice(4,6)}-${g.slice(6)}`; }
+    else if (p.kind === 'select'){ if (p.options.includes(g)) el.value = g; }
+    else el.value = g;
+  });
+  if ($('#extraCodes') && cloudOn()){
+    try { const d = await db.collection('exExtra').doc(docKey(it.rel)).get(); if (d.exists) $('#extraCodes').value = (d.data().codes || []).join('\n'); fitExtra(); }
+    catch(e){ toast('추가 제품코드를 읽지 못했어요: ' + fbErr(e)); }
+  }
+  curFile = file;
+  $('#drop').classList.add('has');
+  $('#dropText').innerHTML = `📄 <b>${esc(it.name)}</b> <span class="muted">(불러온 파일 · ${fmtSize(file.size)})</span><br><span class="muted" style="font-size:13px">내용(PDF)도 바꾸려면 새 파일을 여기에 놓거나 클릭</span>`;
+  $('#editRel').textContent = it.rel; $('#editing').hidden = false;
+  $('#btnSave').textContent = '수정 저장 (덮어쓰기)';
+  updatePreview();
+  if (!guess) toast('지금 파일명이 규칙과 달라서 칸을 채우지 못했어요. 직접 넣어 주세요');
 }
 
 /* ---------- 일괄 다운로드 ---------- */
@@ -2231,8 +2256,6 @@ function applyAuth(){
   $('#meLevel').textContent = me ? (EX_LEVELS[exLevel] || (exLevel === 'blocked' ? '접속 막힘' : exLevel ? '권한 없음' : '…')) : '';
   $('#navAdmin').hidden = !isAdmin();
   if (!$('#viewAdmin').hidden && !isAdmin()) goHome();
-  $('#goRename').hidden = !canEdit();
-  if (!$('#viewRename').hidden && !canEdit()) goHome();
   if (!$('#rpModal').hidden) watchReasons(lastCodes), renderReport();
   if (isAdmin()) startAccounts();
 }
@@ -2419,10 +2442,10 @@ $('#btnSameType').onclick = () => openForm(curType.id);
 $('#btnSearch').onclick = () => search();
 $('#btnReport').onclick = openReport;
 $('#rnType').onchange = renderRnFields;
-$('#goRename').onclick = goRenameView;
-$('#rvBack').onclick = goUpload;
-$('#rvFolder').onchange = $('#rvBad').onchange = rvRender;
-$('#rvQ').oninput = rvRender;
+$('#btnLoadExisting').onclick = openPicker;
+$('#btnEditCancel').onclick = resetForm;
+$('#pickClose').onclick = closePicker;
+$('#pickQ').oninput = renderPick;
 $('#rnForm').onsubmit = doRename;
 $('#rnClose').onclick = $('#rnCancel').onclick = closeRename;
 document.querySelectorAll('.langpill button').forEach(b => b.onclick = () => setLang(b.dataset.lang));
@@ -2430,7 +2453,7 @@ $('#rpClose').onclick = closeReport;
 $('#rpModal').onclick = e => { if (e.target.id === 'rpModal') closeReport(); };
 $('#rpExcel').onclick = downloadReport;
 $('#rpUpdate').onclick = updateSharedReport;
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#rpModal').hidden) closeReport(); if (e.key === 'Escape' && !$('#rnModal').hidden) closeRename(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#rpModal').hidden) closeReport(); if (e.key === 'Escape' && !$('#rnModal').hidden) closeRename(); if (e.key === 'Escape' && !$('#pickModal').hidden) closePicker(); });
 $('#q').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); search(); } };
 $('#q').oninput = fitQ;
 $('#exact').onchange = applyFilter;
